@@ -1,0 +1,12 @@
+[package]
+name = "agentsmith_desktop_core"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "agentsmith_desktop_core"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
