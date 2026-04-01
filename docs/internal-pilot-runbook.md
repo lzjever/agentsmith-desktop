@@ -32,13 +32,14 @@ Not part of this pilot:
 
 Before handing a build to pilot users:
 
-1. Confirm the GitHub release artifacts exist for all target platforms.
-2. Confirm `docs/platform-prerequisites.md` matches the current runtime behavior.
-3. Confirm the target AgentSmith deployment exposes:
+1. Create and push a `v*` tag so GitHub Actions can build the pilot artifacts remotely.
+2. Confirm the GitHub release artifacts exist for all target platforms.
+3. Confirm `docs/platform-prerequisites.md` matches the current runtime behavior.
+4. Confirm the target AgentSmith deployment exposes:
    - `/api/public/desktop/auth`
    - `/api/v1/me/desktop/file-libraries`
    - desktop file-library mount access
-4. Confirm the deployment returns client-visible mount truth, not runner/internal-only addresses.
+5. Confirm the deployment returns client-visible mount truth, not runner/internal-only addresses.
 
 ## Pilot Validation Steps
 

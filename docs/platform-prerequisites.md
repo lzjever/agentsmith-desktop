@@ -73,6 +73,7 @@ Internal pilot expectation:
   - `.deb`
   - `.rpm`
   - Arch Linux package (`agentsmith-desktop-bin`)
+- AppImage is built in GitHub CI only for tagged releases; local development machines should not build it
 
 Bundled installer handoff:
 

@@ -6,9 +6,8 @@
 - `npm run typecheck`
 - `npm run build`
 - `cargo test`
-- `npm run tauri:build`
-- `npm run package:arch:metadata`
-- if building on an Arch-based host, `npm run package:arch`
+- confirm release workflows are green on the latest `main`
+- do not build AppImage locally; AppImage, `.deb`, `.rpm`, and desktop installers are produced only by GitHub Actions after tagging
 - review `docs/known-limitations.md`
 - review `docs/internal-pilot-runbook.md`
 - confirm `README.md` and `docs/README.md` still describe Desktop-first behavior

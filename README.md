@@ -18,3 +18,8 @@ For internal pilot delivery and release operations, start with:
 - [docs/internal-pilot-runbook.md](docs/internal-pilot-runbook.md)
 - [docs/platform-prerequisites.md](docs/platform-prerequisites.md)
 - [docs/release-checklist.md](docs/release-checklist.md)
+
+Release rule:
+
+- local development machines do not build AppImage artifacts
+- each new release is cut by pushing a `v*` tag and letting GitHub Actions build the platform binaries remotely
