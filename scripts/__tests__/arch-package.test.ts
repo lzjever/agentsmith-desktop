@@ -1,5 +1,5 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, normalize } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -71,8 +71,8 @@ describe('arch package helpers', () => {
   it('resolves packaging paths under packaging/arch', () => {
     const paths = resolveArchBuildPaths('/tmp/example');
 
-    expect(paths.pkgbuildPath).toBe('/tmp/example/packaging/arch/PKGBUILD');
-    expect(paths.desktopEntryPath).toBe(`/tmp/example/packaging/arch/${DESKTOP_ENTRY_NAME}`);
-    expect(paths.binarySourcePath).toBe(`/tmp/example/src-tauri/target/release/${APP_EXECUTABLE_NAME}`);
+    expect(paths.pkgbuildPath).toBe(normalize('/tmp/example/packaging/arch/PKGBUILD'));
+    expect(paths.desktopEntryPath).toBe(normalize(`/tmp/example/packaging/arch/${DESKTOP_ENTRY_NAME}`));
+    expect(paths.binarySourcePath).toBe(normalize(`/tmp/example/src-tauri/target/release/${APP_EXECUTABLE_NAME}`));
   });
 });
