@@ -20,7 +20,8 @@ import { fetchDesktopLibraries } from './lib/libraries/api';
 import { displayLibraryName, sortLibrariesNewestFirst } from './lib/libraries/sort';
 import { fetchDesktopMountAccess } from './lib/mounts/api';
 import { buildDesktopMountTarget, detectDesktopPlatform } from './lib/mounts/paths';
-import { createDesktopMountService, type DesktopMountService } from './lib/mounts/service';
+import { createDesktopMountService, createInMemoryMountBackend, type DesktopMountService } from './lib/mounts/service';
+import { createTauriMountBackend, isTauriRuntimeAvailable } from './lib/mounts/tauri-backend';
 import {
   DEFAULT_DESKTOP_STATE,
   activateLibrary,
@@ -40,11 +41,17 @@ export function App(props: {
 } = {}) {
   const [state, setState] = React.useState<DesktopState>(DEFAULT_DESKTOP_STATE);
   const [deploymentInput, setDeploymentInput] = React.useState('https://agentsmith.example.com');
+  const platform = React.useMemo(() => detectDesktopPlatform(), []);
   const [status, setStatus] = React.useState<string>('idle');
   const [error, setError] = React.useState<string | null>(null);
   const mountService = React.useMemo(
-    () => props.mountService ?? createDesktopMountService({ platform: detectDesktopPlatform() }),
-    [props.mountService],
+    () => props.mountService ?? createDesktopMountService({
+      platform,
+      backend: isTauriRuntimeAvailable()
+        ? createTauriMountBackend()
+        : createInMemoryMountBackend({ platform }),
+    }),
+    [platform, props.mountService],
   );
 
   React.useEffect(() => {
@@ -182,7 +189,7 @@ export function App(props: {
         libraryId: library.id,
       });
       const mountTarget = buildDesktopMountTarget({
-        platform: detectDesktopPlatform(),
+        platform,
         access,
         library,
       });
@@ -199,7 +206,7 @@ export function App(props: {
         cause instanceof Error ? cause.message : 'desktop_mount_failed',
       ));
     }
-  }, [mountService, state.auth_session, state.deployment_base_url]);
+  }, [mountService, platform, state.auth_session, state.deployment_base_url]);
 
   const handleDeactivateLibrary = React.useCallback(async (libraryId: string) => {
     setState((current) => deactivateLibrary(current, libraryId));

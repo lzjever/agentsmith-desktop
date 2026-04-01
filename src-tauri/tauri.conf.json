@@ -1,0 +1,38 @@
+{
+  "productName": "AgentSmith Desktop",
+  "version": "0.1.0",
+  "identifier": "ai.imotion.agentsmith.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev -- --host 127.0.0.1 --port 1420",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "AgentSmith Desktop",
+        "width": 1120,
+        "height": 780,
+        "minWidth": 960,
+        "minHeight": 640,
+        "resizable": true,
+        "fullscreen": false,
+        "visible": true,
+        "decorations": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "targets": "all",
+    "category": "Utility",
+    "shortDescription": "Desktop companion app for AgentSmith local file-library mounts",
+    "longDescription": "Sign in to a single AgentSmith deployment and manage local file-library mounts from a desktop companion."
+  },
+  "plugins": {}
+}

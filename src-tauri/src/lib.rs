@@ -50,6 +50,7 @@ pub enum MountPlatform {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MountSpec {
     pub platform: MountPlatform,
     pub filesystem_name: String,

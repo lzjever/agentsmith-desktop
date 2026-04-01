@@ -1,5 +1,5 @@
 import type { FileLibraryDesktopMountAccess } from '../../../types';
-import { createDesktopMountService } from '../service';
+import { createDesktopMountService, createInMemoryMountBackend } from '../service';
 
 const ACCESS: FileLibraryDesktopMountAccess = {
   filesystem_name: 'fs_demo',
@@ -17,7 +17,10 @@ const ACCESS: FileLibraryDesktopMountAccess = {
 
 describe('createDesktopMountService', () => {
   it('activates a mount and returns a mount target', async () => {
-    const service = createDesktopMountService({ platform: 'linux' });
+    const service = createDesktopMountService({
+      platform: 'linux',
+      backend: createInMemoryMountBackend({ platform: 'linux' }),
+    });
 
     const result = await service.activate({
       libraryId: 'lib_demo',
@@ -29,7 +32,10 @@ describe('createDesktopMountService', () => {
   });
 
   it('deactivates a mount and clears its record', async () => {
-    const service = createDesktopMountService({ platform: 'linux' });
+    const service = createDesktopMountService({
+      platform: 'linux',
+      backend: createInMemoryMountBackend({ platform: 'linux' }),
+    });
     await service.activate({
       libraryId: 'lib_demo',
       workspaceId: 'ws_default',
@@ -40,7 +46,10 @@ describe('createDesktopMountService', () => {
   });
 
   it('stops all active mounts', async () => {
-    const service = createDesktopMountService({ platform: 'linux' });
+    const service = createDesktopMountService({
+      platform: 'linux',
+      backend: createInMemoryMountBackend({ platform: 'linux' }),
+    });
     await service.activate({
       libraryId: 'lib_a',
       workspaceId: 'ws_default',
@@ -56,7 +65,10 @@ describe('createDesktopMountService', () => {
   });
 
   it('fails activation when workspace context is missing', async () => {
-    const service = createDesktopMountService({ platform: 'linux' });
+    const service = createDesktopMountService({
+      platform: 'linux',
+      backend: createInMemoryMountBackend({ platform: 'linux' }),
+    });
 
     await expect(service.activate({
       libraryId: 'lib_demo',

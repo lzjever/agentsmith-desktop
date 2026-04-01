@@ -1,27 +1,57 @@
 import type { FileLibraryDesktopMountAccess } from '../../types';
 import { buildDesktopMountTarget, type DesktopPlatform } from './paths';
 
-export interface DesktopMountActivationInput {
+export interface DesktopMountBackendActivationInput {
   libraryId: string;
   workspaceId: string;
+  platform: DesktopPlatform;
+  mountTarget: string;
   access: FileLibraryDesktopMountAccess;
 }
 
-export interface DesktopMountActivationResult {
+export interface DesktopMountBackendActivationResult {
   mountTarget: string;
 }
 
-export interface DesktopMountService {
-  activate(input: DesktopMountActivationInput): Promise<DesktopMountActivationResult>;
+export interface DesktopMountBackend {
+  activate(input: DesktopMountBackendActivationInput): Promise<DesktopMountBackendActivationResult>;
   deactivate(libraryId: string): Promise<void>;
   stopAll(): Promise<void>;
 }
 
-export function createDesktopMountService(args: {
+export interface DesktopMountService {
+  activate(input: {
+    libraryId: string;
+    workspaceId: string;
+    access: FileLibraryDesktopMountAccess;
+  }): Promise<DesktopMountBackendActivationResult>;
+  deactivate(libraryId: string): Promise<void>;
+  stopAll(): Promise<void>;
+}
+
+export function createInMemoryMountBackend(args: {
   platform: DesktopPlatform;
-}): DesktopMountService {
+}): DesktopMountBackend {
   const activeMounts = new Map<string, string>();
 
+  return {
+    async activate(input) {
+      activeMounts.set(input.libraryId, input.mountTarget);
+      return { mountTarget: input.mountTarget };
+    },
+    async deactivate(libraryId) {
+      activeMounts.delete(libraryId);
+    },
+    async stopAll() {
+      activeMounts.clear();
+    },
+  };
+}
+
+export function createDesktopMountService(args: {
+  platform: DesktopPlatform;
+  backend: DesktopMountBackend;
+}): DesktopMountService {
   return {
     async activate(input) {
       const mountTarget = buildDesktopMountTarget({
@@ -34,14 +64,17 @@ export function createDesktopMountService(args: {
           created_at: input.access.created_at,
         },
       });
-      activeMounts.set(input.libraryId, mountTarget);
-      return { mountTarget };
+      return args.backend.activate({
+        ...input,
+        platform: args.platform,
+        mountTarget,
+      });
     },
     async deactivate(libraryId) {
-      activeMounts.delete(libraryId);
+      await args.backend.deactivate(libraryId);
     },
     async stopAll() {
-      activeMounts.clear();
+      await args.backend.stopAll();
     },
   };
 }
