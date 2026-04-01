@@ -9,6 +9,10 @@ const BASE_STATE: DesktopState = {
   libraries: [],
   active_library_ids: [],
   library_aliases: {},
+  mount_states: {},
+  diagnostics: {
+    last_mount_error: null,
+  },
 };
 
 describe('session state helpers', () => {

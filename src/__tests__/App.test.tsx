@@ -79,8 +79,13 @@ describe('App', () => {
         email: 'user@example.com',
         name: 'User Example',
       },
+      libraries: [],
       active_library_ids: [],
       library_aliases: {},
+      mount_states: {},
+      diagnostics: {
+        last_mount_error: null,
+      },
     }));
 
     render(<App />);
@@ -91,6 +96,8 @@ describe('App', () => {
     expect(libraries[0]).toHaveTextContent('Design Assets');
     await user.click(screen.getByTestId('desktop__library-toggle--lib_2'));
     expect(screen.getByTestId('desktop__library-toggle--lib_2')).toHaveTextContent('Deactivate');
+    expect(screen.getByTestId('desktop__library-mount-state--lib_2')).toHaveTextContent('active');
+    expect(screen.getByTestId('desktop__library-mount-target--lib_2')).toHaveTextContent('/AgentSmith/ws_default/lib_2');
     const aliasInput = screen.getByTestId('desktop__library-alias--lib_2');
     await user.type(aliasInput, 'Work Files');
     expect(aliasInput).toHaveValue('Work Files');
@@ -121,8 +128,13 @@ describe('App', () => {
         email: 'user@example.com',
         name: 'User Example',
       },
+      libraries: [],
       active_library_ids: [],
       library_aliases: {},
+      mount_states: {},
+      diagnostics: {
+        last_mount_error: null,
+      },
     }));
     const user = userEvent.setup();
     render(<App />);

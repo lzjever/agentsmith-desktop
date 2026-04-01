@@ -4,6 +4,8 @@ import {
   completeDesktopSignIn,
   connectDeployment,
   deactivateLibrary,
+  markLibraryMounted,
+  markLibraryMountFailed,
   restoreActiveLibraries,
   setLibraryAlias,
   signOutDesktop,
@@ -18,6 +20,22 @@ describe('desktop state', () => {
   it('deactivates libraries cleanly', () => {
     const active = activateLibrary(DEFAULT_DESKTOP_STATE, 'lib_1');
     expect(deactivateLibrary(active, 'lib_1').active_library_ids).toEqual([]);
+  });
+
+  it('tracks mount lifecycle and diagnostics', () => {
+    const activating = activateLibrary(DEFAULT_DESKTOP_STATE, 'lib_1');
+    expect(activating.mount_states.lib_1?.state).toBe('activating');
+
+    const mounted = markLibraryMounted(activating, 'lib_1', '~/AgentSmith/ws/lib_1');
+    expect(mounted.mount_states.lib_1).toEqual({
+      state: 'active',
+      mount_target: '~/AgentSmith/ws/lib_1',
+      last_error: null,
+    });
+
+    const failed = markLibraryMountFailed(mounted, 'lib_1', 'spawn_failed');
+    expect(failed.mount_states.lib_1?.state).toBe('failed');
+    expect(failed.diagnostics.last_mount_error).toBe('spawn_failed');
   });
 
   it('stores and removes aliases', () => {

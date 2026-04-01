@@ -40,6 +40,19 @@ export interface DesktopPkceContext {
   callback_url: string;
 }
 
+export type DesktopMountLifecycleState =
+  | 'idle'
+  | 'activating'
+  | 'active'
+  | 'deactivating'
+  | 'failed';
+
+export interface DesktopMountStatus {
+  state: DesktopMountLifecycleState;
+  mount_target: string | null;
+  last_error: string | null;
+}
+
 export interface DesktopState {
   deployment_base_url: string | null;
   auth_config: DesktopAuthConfig | null;
@@ -48,4 +61,8 @@ export interface DesktopState {
   libraries: DesktopLibrary[];
   active_library_ids: string[];
   library_aliases: Record<string, string>;
+  mount_states: Record<string, DesktopMountStatus>;
+  diagnostics: {
+    last_mount_error: string | null;
+  };
 }

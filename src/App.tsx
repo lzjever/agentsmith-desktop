@@ -24,6 +24,7 @@ import {
   completeDesktopSignIn,
   connectDeployment,
   deactivateLibrary,
+  markLibraryMounted,
   setLibraryAlias,
   signOutDesktop,
 } from './lib/state/desktop-state';
@@ -46,6 +47,10 @@ export function App() {
         libraries: [],
         active_library_ids: restored.active_library_ids,
         library_aliases: restored.library_aliases,
+        mount_states: {},
+        diagnostics: {
+          last_mount_error: null,
+        },
       });
     }
   }, []);
@@ -190,11 +195,17 @@ export function App() {
           <div className="library-list">
             {state.libraries.map((library) => {
               const active = state.active_library_ids.includes(library.id);
+              const mountStatus = state.mount_states[library.id]?.state ?? 'idle';
+              const mountTarget = state.mount_states[library.id]?.mount_target ?? null;
               return (
                 <div className="library-item" key={library.id} data-testid={`desktop__library--${library.id}`}>
                   <div className="library-meta">
                     <strong>{displayLibraryName({ ...library, alias: state.library_aliases[library.id] ?? null })}</strong>
                     <span className="muted">{library.created_at}</span>
+                    <span className="muted" data-testid={`desktop__library-mount-state--${library.id}`}>{mountStatus}</span>
+                    {mountTarget ? (
+                      <span className="muted" data-testid={`desktop__library-mount-target--${library.id}`}>{mountTarget}</span>
+                    ) : null}
                     <input
                       type="text"
                       value={state.library_aliases[library.id] ?? ''}
@@ -208,7 +219,16 @@ export function App() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setState((current) => (active ? deactivateLibrary(current, library.id) : activateLibrary(current, library.id)))}
+                    onClick={() => setState((current) => {
+                      if (active) {
+                        return deactivateLibrary(current, library.id);
+                      }
+                      return markLibraryMounted(
+                        activateLibrary(current, library.id),
+                        library.id,
+                        `/AgentSmith/${library.workspace_id ?? 'workspace'}/${library.id}`,
+                      );
+                    })}
                     data-testid={`desktop__library-toggle--${library.id}`}
                   >
                     {active ? 'Deactivate' : 'Activate'}
@@ -217,6 +237,9 @@ export function App() {
               );
             })}
           </div>
+          {state.diagnostics.last_mount_error ? (
+            <div className="muted" data-testid="desktop__diagnostics">{state.diagnostics.last_mount_error}</div>
+          ) : null}
         </section>
       ) : null}
     </main>

@@ -8,6 +8,10 @@ export const DEFAULT_DESKTOP_STATE: DesktopState = {
   libraries: [],
   active_library_ids: [],
   library_aliases: {},
+  mount_states: {},
+  diagnostics: {
+    last_mount_error: null,
+  },
 };
 
 export function connectDeployment(
@@ -47,6 +51,14 @@ export function activateLibrary(state: DesktopState, libraryId: string): Desktop
   return {
     ...state,
     active_library_ids: [...state.active_library_ids, libraryId],
+    mount_states: {
+      ...state.mount_states,
+      [libraryId]: {
+        state: 'activating',
+        mount_target: state.mount_states[libraryId]?.mount_target ?? null,
+        last_error: null,
+      },
+    },
   };
 }
 
@@ -54,6 +66,54 @@ export function deactivateLibrary(state: DesktopState, libraryId: string): Deskt
   return {
     ...state,
     active_library_ids: state.active_library_ids.filter((value) => value !== libraryId),
+    mount_states: {
+      ...state.mount_states,
+      [libraryId]: {
+        state: 'deactivating',
+        mount_target: state.mount_states[libraryId]?.mount_target ?? null,
+        last_error: state.mount_states[libraryId]?.last_error ?? null,
+      },
+    },
+  };
+}
+
+export function markLibraryMounted(
+  state: DesktopState,
+  libraryId: string,
+  mountTarget: string,
+): DesktopState {
+  return {
+    ...state,
+    mount_states: {
+      ...state.mount_states,
+      [libraryId]: {
+        state: 'active',
+        mount_target: mountTarget,
+        last_error: null,
+      },
+    },
+  };
+}
+
+export function markLibraryMountFailed(
+  state: DesktopState,
+  libraryId: string,
+  error: string,
+): DesktopState {
+  return {
+    ...state,
+    mount_states: {
+      ...state.mount_states,
+      [libraryId]: {
+        state: 'failed',
+        mount_target: state.mount_states[libraryId]?.mount_target ?? null,
+        last_error: error,
+      },
+    },
+    diagnostics: {
+      ...state.diagnostics,
+      last_mount_error: error,
+    },
   };
 }
 

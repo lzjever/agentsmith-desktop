@@ -46,6 +46,10 @@ const COMPLETE_STATE: DesktopState = {
   library_aliases: {
     lib_1: 'Work Files',
   },
+  mount_states: {},
+  diagnostics: {
+    last_mount_error: null,
+  },
 };
 
 describe('desktop token store', () => {
