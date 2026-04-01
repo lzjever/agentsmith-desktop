@@ -100,16 +100,7 @@ describe('App', () => {
   it('completes sign-in through the interactive auth runtime and loads libraries', async () => {
     const user = userEvent.setup();
     const authRuntime: DesktopAuthRuntime = {
-      startInteractiveSignIn: vi.fn().mockImplementation(async () => {
-        const pkce = JSON.parse(window.sessionStorage.getItem('agentsmith-desktop:pkce') ?? '{}') as {
-          state?: string;
-        };
-        return {
-          code: 'code_123',
-          state: pkce.state ?? null,
-          error: null,
-        };
-      }),
+      startInteractiveSignIn: vi.fn().mockResolvedValue(undefined),
     };
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input);
@@ -117,30 +108,36 @@ describe('App', () => {
         return new Response(JSON.stringify({
           deployment_base_url: 'https://agentsmith.example.com',
           api_base_url: API_BASE,
-          issuer: 'https://agentsmith.example.com/realms/mbos',
-          authorization_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/auth',
-          token_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/token',
-          client_id: 'agentsmith-desktop',
-          scopes: ['openid', 'profile', 'email'],
-          response_type: 'code',
-          pkce_method: 'S256',
-          suggested_callback_origin: 'http://127.0.0.1',
-          suggested_callback_path: '/desktop/auth/callback',
         }), { status: 200 });
       }
-      if (url.endsWith('/protocol/openid-connect/token') && init?.method === 'POST') {
+      if (url.endsWith('/api/v1/desktop/auth/start') && init?.method === 'POST') {
         return new Response(JSON.stringify({
-          access_token: [
-            'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0',
-            btoa(JSON.stringify({
-              sub: 'user_1',
-              email: 'user@example.com',
-              name: 'User Example',
-            })).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, ''),
-            '',
-          ].join('.'),
-          refresh_token: 'refresh_123',
-          expires_in: 3600,
+          request_id: 'dreq_123',
+          browser_start_url: 'https://agentsmith.example.com/en-US/desktop/auth/request?desktop_auth_request_id=dreq_123',
+          poll_url: '/api/v1/desktop/auth/requests/dreq_123',
+          poll_interval_ms: 0,
+        }), { status: 201 });
+      }
+      if (url.endsWith('/api/v1/desktop/auth/requests/dreq_123')) {
+        return new Response(JSON.stringify({
+          request_id: 'dreq_123',
+          status: 'authenticated',
+          exchange_ticket: 'dext_123',
+          authenticated_user: {
+            id: 'user_1',
+            email: 'user@example.com',
+            name: 'User Example',
+          },
+        }), { status: 200 });
+      }
+      if (url.endsWith('/api/v1/desktop/auth/exchange') && init?.method === 'POST') {
+        return new Response(JSON.stringify({
+          access_token: 'dsk_123',
+          signed_in_user: {
+            id: 'user_1',
+            email: 'user@example.com',
+            name: 'User Example',
+          },
         }), { status: 200 });
       }
       if (url.endsWith('/api/v1/me/desktop/file-libraries')) {

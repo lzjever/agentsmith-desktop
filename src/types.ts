@@ -31,15 +31,15 @@ export interface SignedInUser {
 export interface DesktopAuthConfig {
   deployment_base_url: string;
   api_base_url?: string;
-  issuer: string;
-  authorization_endpoint: string;
-  token_endpoint: string;
-  client_id: string;
-  scopes: string[];
-  response_type: 'code';
-  pkce_method: 'S256';
-  suggested_callback_origin: string;
-  suggested_callback_path: string;
+  issuer?: string;
+  authorization_endpoint?: string;
+  token_endpoint?: string;
+  client_id?: string;
+  scopes?: string[];
+  response_type?: 'code';
+  pkce_method?: 'S256';
+  suggested_callback_origin?: string;
+  suggested_callback_path?: string;
 }
 
 export interface DesktopAuthSession {

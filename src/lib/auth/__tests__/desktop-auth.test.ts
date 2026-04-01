@@ -1,77 +1,95 @@
 import type { DesktopAuthConfig } from '../../../types';
 import {
-  buildSignedInUser,
   exchangeDesktopAuthorizationCode,
   fetchDesktopAuthConfig,
+  pollDesktopAuthorization,
   startDesktopAuthorization,
 } from '../desktop-auth';
 
 const AUTH_CONFIG: DesktopAuthConfig = {
   deployment_base_url: 'https://agentsmith.example.com',
   api_base_url: 'https://api.agentsmith.example.com/api/v1',
-  issuer: 'https://agentsmith.example.com/realms/mbos',
-  authorization_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/auth',
-  token_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/token',
-  client_id: 'agentsmith-desktop',
-  scopes: ['openid', 'profile', 'email'],
-  response_type: 'code',
-  pkce_method: 'S256',
-  suggested_callback_origin: 'http://127.0.0.1',
-  suggested_callback_path: '/desktop/auth/callback',
 };
 
-function makeAccessTokenPayload(payload: Record<string, unknown>) {
-  return `header.${btoa(JSON.stringify(payload)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')}.sig`;
-}
-
 describe('desktop auth client', () => {
-  it('loads desktop auth config from the deployment', async () => {
+  it('loads desktop auth bootstrap config from the deployment', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(AUTH_CONFIG), { status: 200 }));
     await expect(fetchDesktopAuthConfig('https://agentsmith.example.com', fetchMock)).resolves.toEqual(AUTH_CONFIG);
     expect(fetchMock).toHaveBeenCalledWith('https://agentsmith.example.com/api/public/desktop/auth', { method: 'GET' });
   });
 
-  it('builds an authorization url with PKCE', async () => {
-    const result = await startDesktopAuthorization({
+  it('starts brokered desktop authorization through the api', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      request_id: 'dreq_123',
+      browser_start_url: 'https://agentsmith.example.com/en-US/desktop/auth/request?desktop_auth_request_id=dreq_123',
+      poll_url: '/api/v1/desktop/auth/requests/dreq_123',
+      poll_interval_ms: 1500,
+    }), { status: 201 }));
+
+    await expect(startDesktopAuthorization({
       authConfig: AUTH_CONFIG,
-      callbackUrl: 'http://127.0.0.1:38111/desktop/auth/callback',
+      fetchImpl: fetchMock,
+    })).resolves.toEqual({
+      request_id: 'dreq_123',
+      browser_start_url: 'https://agentsmith.example.com/en-US/desktop/auth/request?desktop_auth_request_id=dreq_123',
+      poll_url: '/api/v1/desktop/auth/requests/dreq_123',
+      poll_interval_ms: 1500,
     });
-    const url = new URL(result.authorizationUrl);
-    expect(url.origin + url.pathname).toBe(AUTH_CONFIG.authorization_endpoint);
-    expect(url.searchParams.get('client_id')).toBe('agentsmith-desktop');
-    expect(url.searchParams.get('redirect_uri')).toBe('http://127.0.0.1:38111/desktop/auth/callback');
-    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
-    expect(result.state).toMatch(/^[A-Za-z0-9\-_]+$/);
+
+    expect(fetchMock).toHaveBeenCalledWith('https://api.agentsmith.example.com/api/v1/desktop/auth/start', expect.objectContaining({
+      method: 'POST',
+    }));
   });
 
-  it('exchanges an authorization code for a desktop session', async () => {
+  it('polls the brokered desktop authorization request state', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      access_token: 'token_a',
-      refresh_token: 'refresh_a',
-      expires_in: 1800,
+      request_id: 'dreq_123',
+      status: 'authenticated',
+      exchange_ticket: 'dext_123',
+      authenticated_user: {
+        id: 'user_1',
+        email: 'user@example.com',
+        name: 'User Example',
+      },
     }), { status: 200 }));
-    const session = await exchangeDesktopAuthorizationCode({
+
+    await expect(pollDesktopAuthorization({
       authConfig: AUTH_CONFIG,
-      code: 'code_a',
-      verifier: 'verifier_a',
-      callbackUrl: 'http://127.0.0.1:38111/desktop/auth/callback',
+      pollUrl: '/api/v1/desktop/auth/requests/dreq_123',
+      fetchImpl: fetchMock,
+    })).resolves.toMatchObject({
+      status: 'authenticated',
+      exchange_ticket: 'dext_123',
+    });
+  });
+
+  it('exchanges the authenticated request into a desktop session', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      access_token: 'dsk_123',
+      signed_in_user: {
+        id: 'user_1',
+        email: 'user@example.com',
+        name: 'User Example',
+      },
+    }), { status: 200 }));
+    const exchanged = await exchangeDesktopAuthorizationCode({
+      authConfig: AUTH_CONFIG,
+      requestId: 'dreq_123',
+      exchangeTicket: 'dext_123',
       fetchImpl: fetchMock,
     });
-    expect(session.access_token).toBe('token_a');
-    expect(session.refresh_token).toBe('refresh_a');
-    expect(session.expires_at).toBeTypeOf('number');
-  });
 
-  it('derives the signed-in user from token claims', () => {
-    const user = buildSignedInUser(makeAccessTokenPayload({
-      sub: 'user_1',
-      email: 'user@example.com',
-      name: 'User Example',
-    }));
-    expect(user).toEqual({
-      id: 'user_1',
-      email: 'user@example.com',
-      name: 'User Example',
+    expect(exchanged).toEqual({
+      session: {
+        access_token: 'dsk_123',
+        refresh_token: null,
+        expires_at: null,
+      },
+      signedInUser: {
+        id: 'user_1',
+        email: 'user@example.com',
+        name: 'User Example',
+      },
     });
   });
 });

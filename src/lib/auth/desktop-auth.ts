@@ -1,22 +1,44 @@
-import type { DesktopAuthConfig, DesktopAuthSession } from '../../types';
-import { createPkceChallenge, randomBase64Url } from './pkce';
-import { readSignedInUserFromAccessToken } from './jwt';
+import type { DesktopAuthConfig, DesktopAuthSession, SignedInUser } from '../../types';
 
 export interface DesktopAuthFetch {
   (input: string, init?: RequestInit): Promise<Response>;
 }
 
 export interface DesktopAuthStartState {
-  authorizationUrl: string;
-  state: string;
-  verifier: string;
+  request_id: string;
+  browser_start_url: string;
+  poll_url: string;
+  poll_interval_ms: number;
+}
+
+export interface DesktopAuthPollState {
+  request_id: string;
+  status: 'pending' | 'authenticated' | 'exchanged' | 'expired' | 'failed';
+  exchange_ticket: string | null;
+  authenticated_user: SignedInUser | null;
+}
+
+function trimTrailingSlashes(value: string): string {
+  return value.trim().replace(/\/+$/, '');
+}
+
+function buildApiUrl(apiBaseUrl: string, path: string): string {
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+  const normalizedApiBaseUrl = trimTrailingSlashes(apiBaseUrl);
+  if (path.startsWith('/api/')) {
+    const origin = new URL(normalizedApiBaseUrl).origin;
+    return `${origin}${path}`;
+  }
+  return `${normalizedApiBaseUrl}/${path.replace(/^\/+/, '')}`;
 }
 
 export async function fetchDesktopAuthConfig(
   deploymentBaseUrl: string,
   fetchImpl: DesktopAuthFetch = fetch,
 ): Promise<DesktopAuthConfig> {
-  const response = await fetchImpl(`${deploymentBaseUrl}/api/public/desktop/auth`, { method: 'GET' });
+  const response = await fetchImpl(`${trimTrailingSlashes(deploymentBaseUrl)}/api/public/desktop/auth`, { method: 'GET' });
   if (!response.ok) {
     throw new Error(`desktop_auth_config_failed_${response.status}`);
   }
@@ -25,59 +47,66 @@ export async function fetchDesktopAuthConfig(
 
 export async function startDesktopAuthorization(args: {
   authConfig: DesktopAuthConfig;
-  callbackUrl: string;
+  fetchImpl?: DesktopAuthFetch;
 }): Promise<DesktopAuthStartState> {
-  const verifier = randomBase64Url(64);
-  const state = randomBase64Url(32);
-  const pkce = await createPkceChallenge(verifier);
-  const url = new URL(args.authConfig.authorization_endpoint);
-  url.searchParams.set('response_type', args.authConfig.response_type);
-  url.searchParams.set('client_id', args.authConfig.client_id);
-  url.searchParams.set('redirect_uri', args.callbackUrl);
-  url.searchParams.set('scope', args.authConfig.scopes.join(' '));
-  url.searchParams.set('state', state);
-  url.searchParams.set('code_challenge', pkce.challenge);
-  url.searchParams.set('code_challenge_method', pkce.method);
-  return {
-    authorizationUrl: url.toString(),
-    state,
-    verifier,
-  };
+  const response = await (args.fetchImpl ?? fetch)(buildApiUrl(args.authConfig.api_base_url ?? args.authConfig.deployment_base_url, '/api/v1/desktop/auth/start'), {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      deployment_base_url: args.authConfig.deployment_base_url,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`desktop_auth_start_failed_${response.status}`);
+  }
+  return response.json() as Promise<DesktopAuthStartState>;
+}
+
+export async function pollDesktopAuthorization(args: {
+  authConfig: DesktopAuthConfig;
+  pollUrl: string;
+  fetchImpl?: DesktopAuthFetch;
+}): Promise<DesktopAuthPollState> {
+  const response = await (args.fetchImpl ?? fetch)(buildApiUrl(args.authConfig.api_base_url ?? args.authConfig.deployment_base_url, args.pollUrl), {
+    method: 'GET',
+  });
+  if (!response.ok) {
+    throw new Error(`desktop_auth_poll_failed_${response.status}`);
+  }
+  return response.json() as Promise<DesktopAuthPollState>;
 }
 
 export async function exchangeDesktopAuthorizationCode(args: {
   authConfig: DesktopAuthConfig;
-  code: string;
-  verifier: string;
-  callbackUrl: string;
+  requestId: string;
+  exchangeTicket: string;
   fetchImpl?: DesktopAuthFetch;
-}): Promise<DesktopAuthSession> {
-  const response = await (args.fetchImpl ?? fetch)(args.authConfig.token_endpoint, {
+}): Promise<{ session: DesktopAuthSession; signedInUser: SignedInUser }> {
+  const response = await (args.fetchImpl ?? fetch)(buildApiUrl(args.authConfig.api_base_url ?? args.authConfig.deployment_base_url, '/api/v1/desktop/auth/exchange'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      code: args.code,
-      client_id: args.authConfig.client_id,
-      redirect_uri: args.callbackUrl,
-      code_verifier: args.verifier,
-    }).toString(),
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      request_id: args.requestId,
+      exchange_ticket: args.exchangeTicket,
+    }),
   });
   if (!response.ok) {
-    throw new Error(`desktop_token_exchange_failed_${response.status}`);
+    throw new Error(`desktop_auth_exchange_failed_${response.status}`);
   }
   const payload = await response.json() as {
     access_token: string;
-    refresh_token?: string;
-    expires_in?: number;
+    signed_in_user: SignedInUser;
   };
   return {
-    access_token: payload.access_token,
-    refresh_token: payload.refresh_token ?? null,
-    expires_at: typeof payload.expires_in === 'number' ? Date.now() + (payload.expires_in * 1000) : null,
+    session: {
+      access_token: payload.access_token,
+      refresh_token: null,
+      expires_at: null,
+    },
+    signedInUser: payload.signed_in_user,
   };
-}
-
-export function buildSignedInUser(accessToken: string) {
-  return readSignedInUserFromAccessToken(accessToken);
 }

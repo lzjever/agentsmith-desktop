@@ -1,20 +1,16 @@
 import * as React from 'react';
 import type { DesktopLibrary, DesktopState } from './types';
-import { buildLocalhostCallbackUrl, parseDesktopAuthCallbackUrl } from './lib/auth/callback';
 import {
-  buildSignedInUser,
   exchangeDesktopAuthorizationCode,
   fetchDesktopAuthConfig,
+  pollDesktopAuthorization,
   startDesktopAuthorization,
 } from './lib/auth/desktop-auth';
 import { createBrowserAuthRuntime, createTauriAuthRuntime, fetchDesktopAuthConfigViaTauri } from './lib/auth/tauri-backend';
 import {
   clearDesktopSession,
-  clearPkceContext,
   loadDesktopSession,
-  loadPkceContext,
   saveDesktopSession,
-  savePkceContext,
 } from './lib/auth/token-store';
 import type { DesktopAuthRuntime } from './lib/auth/runtime';
 import { normalizeDeploymentBaseUrl } from './lib/deployment/normalize';
@@ -169,52 +165,6 @@ export function App(props: {
     platform,
   }), [platform, state.diagnostics.checks]);
 
-  const completeSignInFromCallback = React.useCallback(async (callback: ReturnType<typeof parseDesktopAuthCallbackUrl>) => {
-    const pkce = loadPkceContext(window.sessionStorage);
-    if (!callback.code || !callback.state || !pkce || !state.auth_config) {
-      if (callback.error) {
-        setStatus('error');
-        setError(callback.error);
-      }
-      return;
-    }
-    if (pkce.state !== callback.state) {
-      setError('desktop_state_mismatch');
-      setStatus('error');
-      return;
-    }
-    setStatus('completing_sign_in');
-    try {
-      const session = await exchangeDesktopAuthorizationCode({
-        authConfig: state.auth_config,
-        code: callback.code,
-        verifier: pkce.verifier,
-        callbackUrl: pkce.callback_url,
-      });
-      const user = buildSignedInUser(session.access_token);
-      setState((current) => {
-        const next = completeDesktopSignIn(current, session, user);
-        saveDesktopSession(window.localStorage, next);
-        return next;
-      });
-      clearPkceContext(window.sessionStorage);
-      window.history.replaceState({}, '', window.location.pathname);
-      setStatus('signed_in');
-      setError(null);
-    } catch (cause: unknown) {
-      setStatus('error');
-      setError(cause instanceof Error ? cause.message : 'desktop_login_failed');
-    }
-  }, [state.auth_config]);
-
-  React.useEffect(() => {
-    const callback = parseDesktopAuthCallbackUrl(window.location.href);
-    if (!callback.code && !callback.error) {
-      return;
-    }
-    void completeSignInFromCallback(callback);
-  }, [completeSignInFromCallback]);
-
   React.useEffect(() => {
     if (!state.auth_session || !state.deployment_base_url || !state.auth_config) {
       return;
@@ -255,31 +205,54 @@ export function App(props: {
     if (!state.auth_config || !state.deployment_base_url) {
       return;
     }
-    const callbackUrl = buildLocalhostCallbackUrl(38111);
-    const start = await startDesktopAuthorization({
-      authConfig: state.auth_config,
-      callbackUrl,
-    });
-    savePkceContext(window.sessionStorage, {
-      deployment_base_url: state.deployment_base_url,
-      state: start.state,
-      verifier: start.verifier,
-      callback_url: callbackUrl,
-    });
-    setStatus('awaiting_browser_sign_in');
-    const callback = await authRuntime.startInteractiveSignIn({
-      authorizationUrl: start.authorizationUrl,
-      callbackUrl,
-    });
-    if (callback) {
-      await completeSignInFromCallback(callback);
+    try {
+      setStatus('starting_browser_sign_in');
+      setError(null);
+      const started = await startDesktopAuthorization({
+        authConfig: state.auth_config,
+      });
+      await authRuntime.startInteractiveSignIn({
+        authorizationUrl: started.browser_start_url,
+      });
+      setStatus('awaiting_browser_sign_in');
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < 5 * 60 * 1000) {
+        await new Promise((resolve) => window.setTimeout(resolve, started.poll_interval_ms));
+        const polled = await pollDesktopAuthorization({
+          authConfig: state.auth_config,
+          pollUrl: started.poll_url,
+        });
+        if (polled.status === 'pending') {
+          continue;
+        }
+        if (polled.status === 'authenticated' && polled.exchange_ticket) {
+          setStatus('completing_sign_in');
+          const exchanged = await exchangeDesktopAuthorizationCode({
+            authConfig: state.auth_config,
+            requestId: started.request_id,
+            exchangeTicket: polled.exchange_ticket,
+          });
+          setState((current) => {
+            const next = completeDesktopSignIn(current, exchanged.session, exchanged.signedInUser);
+            saveDesktopSession(window.localStorage, next);
+            return next;
+          });
+          setStatus('signed_in');
+          setError(null);
+          return;
+        }
+        throw new Error(`desktop_auth_${polled.status}`);
+      }
+      throw new Error('desktop_auth_timeout');
+    } catch (cause: unknown) {
+      setStatus('error');
+      setError(cause instanceof Error ? cause.message : 'desktop_login_failed');
     }
-  }, [authRuntime, completeSignInFromCallback, state.auth_config, state.deployment_base_url]);
+  }, [authRuntime, state.auth_config, state.deployment_base_url]);
 
   const handleSignOut = React.useCallback(() => {
     const next = signOutDesktop(state);
     clearDesktopSession(window.localStorage);
-    clearPkceContext(window.sessionStorage);
     setState(next);
     setStatus('idle');
     setError(null);
