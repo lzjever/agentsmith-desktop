@@ -92,7 +92,8 @@ describe('desktop doctor mount prerequisites', () => {
         key: 'winfsp',
         message: 'Install WinFsp on this machine, then refresh diagnostics before mounting libraries.',
         url: 'https://winfsp.dev/rel/',
-        label: 'Open setup guide',
+        label: 'Open installer',
+        installer_key: 'winfsp',
       },
     ]);
   });

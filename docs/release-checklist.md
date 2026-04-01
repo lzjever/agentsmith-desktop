@@ -6,9 +6,15 @@
 - `npm run typecheck`
 - `npm run build`
 - `cargo test`
+- `npm run tauri:build`
+- `npm run package:arch:metadata`
+- if building on an Arch-based host, `npm run package:arch`
 - review `docs/known-limitations.md`
 - review `docs/internal-pilot-runbook.md`
 - confirm `README.md` and `docs/README.md` still describe Desktop-first behavior
+- confirm bundled prerequisite installers are present when required for the pilot:
+  - `src-tauri/resources/installers/windows/WinFsp.msi` or `WinFsp.exe`
+  - `src-tauri/resources/installers/macos/macFUSE.dmg` or `macFUSE.pkg`
 
 ## GitHub Release Requirements
 
@@ -16,8 +22,14 @@
   - ubuntu-22.04
   - windows-latest
   - macos-latest
+- Arch packaging workflow/job green
 - release workflow prepared for `v*` tags
 - artifacts uploaded for all three platforms
+- Linux release artifacts include:
+  - AppImage
+  - `.deb`
+  - `.rpm`
+  - Arch package metadata, plus an Arch package artifact when built on an Arch-based host
 - checksums generated
 
 ## AgentSmith Web Coordination

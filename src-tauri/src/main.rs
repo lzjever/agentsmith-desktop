@@ -2,15 +2,18 @@
 
 use agentsmith_desktop_core::{
     build_mount_command_with_executable, build_open_command_for_os, mark_mount_active, mark_mount_failed,
-    resolve_juicefs_executable, run_doctor_checks as core_run_doctor_checks, DoctorCheck,
-    MountLifecycleState, MountRecord, MountSpec,
+    resolve_installer_target_from_inputs, resolve_juicefs_executable,
+    run_doctor_checks as core_run_doctor_checks, DoctorCheck, MountLifecycleState, MountRecord,
+    MountSpec,
 };
 use parking_lot::Mutex;
 use std::{
     collections::HashMap,
     io::ErrorKind,
+    path::PathBuf,
     process::{Child, Command, Stdio},
 };
+use tauri::Manager;
 
 #[derive(Debug)]
 struct RunningMount {
@@ -28,6 +31,15 @@ struct MountLibraryRequest {
     #[serde(alias = "libraryId")]
     library_id: String,
     spec: MountSpec,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct DoctorHandoffRequest {
+    #[serde(alias = "actionKey")]
+    action_key: String,
+    #[serde(alias = "installerKey")]
+    installer_key: Option<String>,
+    url: String,
 }
 
 fn stop_child_process(child: &mut Child) -> Result<(), String> {
@@ -187,6 +199,31 @@ fn open_path(path: String) -> Result<(), String> {
     open_with_system(&path)
 }
 
+#[tauri::command]
+fn handoff_doctor_action(
+    app: tauri::AppHandle,
+    request: DoctorHandoffRequest,
+) -> Result<(), String> {
+    if let Some(installer_key) = request.installer_key.as_deref() {
+        let resource_dir: Option<PathBuf> = app.path().resource_dir().ok();
+        let env_key = format!("AGENTSMITH_DESKTOP_INSTALLER_{}", installer_key.to_ascii_uppercase());
+        let override_value = std::env::var(&env_key).ok();
+        if let Some(target) = resolve_installer_target_from_inputs(
+            installer_key,
+            resource_dir.as_deref(),
+            override_value.as_deref(),
+        ) {
+            return open_with_system(&target);
+        }
+    }
+
+    if request.action_key.is_empty() {
+        return Err("desktop_doctor_action_missing".into());
+    }
+
+    open_with_system(&request.url)
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(MountRegistry::default())
@@ -196,7 +233,8 @@ fn main() {
             stop_all_mounts,
             run_doctor_checks,
             open_external_url,
-            open_path
+            open_path,
+            handoff_doctor_action
         ])
         .run(tauri::generate_context!())
         .expect("failed to run AgentSmith Desktop");

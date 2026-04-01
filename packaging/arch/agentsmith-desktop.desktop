@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=AgentSmith Desktop
+Comment=Desktop companion app for AgentSmith local file-library mounts
+Exec=agentsmith-desktop
+Icon=agentsmith-desktop
+Terminal=false
+Type=Application
+Categories=Utility;
+StartupNotify=true

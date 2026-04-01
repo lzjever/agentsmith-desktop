@@ -67,3 +67,54 @@ jobs:
           name: desktop-build-${{ matrix.platform }}
           path: src-tauri/target/release/bundle/**/*
           if-no-files-found: error
+
+  arch-package:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+
+    steps:
+      - name: Install Arch packaging dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm \
+            base-devel \
+            git \
+            nodejs \
+            npm \
+            rustup \
+            webkit2gtk-4.1 \
+            gtk3 \
+            libayatana-appindicator \
+            librsvg \
+            patchelf
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        run: rustup default stable
+
+      - name: Run Arch packaging tests
+        run: |
+          npm ci
+          npm test -- scripts/__tests__/arch-package.test.ts
+          npm run typecheck
+          cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build desktop binary for Arch package
+        run: npm run tauri:build -- --bundles none
+
+      - name: Build Arch package
+        run: |
+          npm run package:arch:metadata
+          npm run package:arch
+
+      - name: Upload Arch package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-build-archlinux
+          path: |
+            packaging/arch/PKGBUILD
+            packaging/arch/.SRCINFO
+            packaging/arch/out/dist/*
+          if-no-files-found: error

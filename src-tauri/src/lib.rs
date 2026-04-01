@@ -72,6 +72,30 @@ pub struct OpenCommandSpec {
     pub args: Vec<String>,
 }
 
+pub fn resolve_installer_target_from_inputs(
+    installer_key: &str,
+    resource_dir: Option<&Path>,
+    override_value: Option<&str>,
+) -> Option<String> {
+    if let Some(value) = override_value.map(str::trim).filter(|value| !value.is_empty()) {
+        return Some(value.to_string());
+    }
+
+    let resource_dir = resource_dir?;
+    let installer_dir = resource_dir.join("installers");
+    let candidates: &[&str] = match installer_key {
+        "winfsp" => &["windows/WinFsp.msi", "windows/WinFsp.exe"],
+        "macfuse" => &["macos/macFUSE.dmg", "macos/macFUSE.pkg"],
+        _ => &[],
+    };
+
+    candidates
+        .iter()
+        .map(|relative| installer_dir.join(relative))
+        .find(|candidate| candidate.exists())
+        .map(|candidate| candidate.display().to_string())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DoctorCheckStatus {
     #[serde(rename = "ready")]
@@ -281,9 +305,10 @@ mod tests {
 
     use super::{
         build_mount_command, build_mount_command_with_executable, build_open_command_for_os,
-        mark_mount_active, mark_mount_failed, resolve_juicefs_executable_from_inputs, restore_mounts,
-        run_doctor_checks, search_path_for_binary, stop_all_mounts, DoctorCheckStatus,
-        JuicefsCommandSpec, MountLifecycleState, MountPlatform, MountRecord, MountSpec, OpenCommandSpec,
+        mark_mount_active, mark_mount_failed, resolve_installer_target_from_inputs,
+        resolve_juicefs_executable_from_inputs, restore_mounts, run_doctor_checks, search_path_for_binary,
+        stop_all_mounts, DoctorCheckStatus, JuicefsCommandSpec, MountLifecycleState, MountPlatform,
+        MountRecord, MountSpec, OpenCommandSpec,
     };
 
     #[test]
@@ -471,5 +496,30 @@ mod tests {
                 args: vec!["/tmp/agentsmith-mount".into()],
             }
         );
+    }
+
+    #[test]
+    fn resolve_installer_target_prefers_override() {
+        let target = resolve_installer_target_from_inputs(
+            "winfsp",
+            None,
+            Some("C:\\Installers\\WinFsp.msi"),
+        );
+        assert_eq!(target.as_deref(), Some("C:\\Installers\\WinFsp.msi"));
+    }
+
+    #[test]
+    fn resolve_installer_target_uses_resource_dir() {
+        let resource_dir = env::temp_dir().join(format!("agentsmith-desktop-resource-{}", std::process::id()));
+        let installer_path = resource_dir.join("installers/windows");
+        fs::create_dir_all(&installer_path).expect("expected installer dir");
+        let installer_file = installer_path.join("WinFsp.msi");
+        fs::write(&installer_file, b"placeholder").expect("expected installer file");
+
+        let target = resolve_installer_target_from_inputs("winfsp", Some(&resource_dir), None);
+        assert_eq!(target.as_deref(), Some(installer_file.display().to_string().as_str()));
+
+        let _ = fs::remove_file(&installer_file);
+        let _ = fs::remove_dir_all(&resource_dir);
     }
 }

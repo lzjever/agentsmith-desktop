@@ -1,0 +1,20 @@
+pkgbase = agentsmith-desktop-bin
+	pkgdesc = AgentSmith Desktop internal pilot binary package
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/lzjever/agentsmith-desktop
+	arch = x86_64
+	license = custom
+	depends = gtk3
+	depends = webkit2gtk-4.1
+	optdepends = fuse3: local file-library mount support
+	provides = agentsmith-desktop
+	conflicts = agentsmith-desktop
+	source = agentsmith-desktop
+	source = agentsmith-desktop.desktop
+	source = agentsmith-desktop.png
+	sha256sums = SKIP
+	sha256sums = SKIP
+	sha256sums = SKIP
+
+pkgname = agentsmith-desktop-bin

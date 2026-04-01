@@ -24,6 +24,7 @@ describe('App', () => {
     return {
       runChecks: vi.fn().mockResolvedValue(checks),
       openExternalUrl: vi.fn().mockResolvedValue(undefined),
+      handoffGuidanceAction: vi.fn().mockResolvedValue(undefined),
     };
   }
 
@@ -534,6 +535,7 @@ describe('App', () => {
           },
         ]),
       openExternalUrl: vi.fn().mockResolvedValue(undefined),
+      handoffGuidanceAction: vi.fn().mockResolvedValue(undefined),
     };
 
     render(<App doctorService={doctorService} />);
@@ -563,15 +565,18 @@ describe('App', () => {
         },
       ]),
       openExternalUrl: vi.fn().mockResolvedValue(undefined),
+      handoffGuidanceAction: vi.fn().mockResolvedValue(undefined),
     };
     render(<App doctorService={doctorService} />);
 
     const user = userEvent.setup();
     await user.click(await screen.findByTestId('desktop__doctor-action--fuse'));
 
-    expect(doctorService.openExternalUrl).toHaveBeenCalledWith(
-      'https://juicefs.com/docs/community/getting-started/installation/',
-    );
+    expect(doctorService.handoffGuidanceAction).toHaveBeenCalledWith(expect.objectContaining({
+      key: 'fuse',
+      url: 'https://juicefs.com/docs/community/getting-started/installation/',
+      installer_key: null,
+    }));
   });
 
   it('opens an active mount target through the mount service', async () => {

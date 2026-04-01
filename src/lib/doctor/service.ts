@@ -4,6 +4,7 @@ import type { DesktopPlatform } from '../mounts/paths';
 export interface DesktopDoctorService {
   runChecks(): Promise<DesktopDoctorCheck[]>;
   openExternalUrl(url: string): Promise<void>;
+  handoffGuidanceAction(action: DesktopDoctorGuidanceAction): Promise<void>;
 }
 
 export interface DesktopDoctorGuidanceAction {
@@ -11,6 +12,7 @@ export interface DesktopDoctorGuidanceAction {
   message: string;
   url: string;
   label: string;
+  installer_key: string | null;
 }
 
 const REQUIRED_KEYS_BY_PLATFORM: Record<DesktopPlatform, string[]> = {
@@ -46,6 +48,9 @@ export function createFallbackDoctorService(): DesktopDoctorService {
     },
     async openExternalUrl(url: string) {
       window.open(url, '_blank', 'noopener,noreferrer');
+    },
+    async handoffGuidanceAction(action: DesktopDoctorGuidanceAction) {
+      await this.openExternalUrl(action.url);
     },
   };
 }
@@ -88,6 +93,7 @@ export function getDesktopDoctorGuidanceActions(args: {
     key,
     message: GUIDANCE_BY_KEY[key] ?? `Install or configure ${key}, then refresh diagnostics before mounting libraries.`,
     url: GUIDANCE_URL_BY_KEY[key] ?? 'https://juicefs.com/docs/community/getting-started/installation/',
-    label: 'Open setup guide',
+    label: key === 'winfsp' || key === 'macfuse' ? 'Open installer' : 'Open setup guide',
+    installer_key: key === 'winfsp' || key === 'macfuse' ? key : null,
   }));
 }

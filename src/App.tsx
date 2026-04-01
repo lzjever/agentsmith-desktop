@@ -396,13 +396,13 @@ export function App(props: {
               {doctorGuidanceActions.map((guidance) => (
                 <div key={guidance.key} className="muted">
                   <div>{guidance.message}</div>
-                  <button
-                    type="button"
-                    data-testid={`desktop__doctor-action--${guidance.key}`}
-                    onClick={() => void doctorService.openExternalUrl(guidance.url)}
-                  >
-                    {guidance.label}
-                  </button>
+                    <button
+                      type="button"
+                      data-testid={`desktop__doctor-action--${guidance.key}`}
+                      onClick={() => void doctorService.handoffGuidanceAction(guidance)}
+                    >
+                      {guidance.label}
+                    </button>
                 </div>
               ))}
             </div>

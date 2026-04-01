@@ -1,0 +1,23 @@
+pkgname=agentsmith-desktop-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='AgentSmith Desktop internal pilot binary package'
+arch=('x86_64')
+url='https://github.com/lzjever/agentsmith-desktop'
+license=('custom')
+depends=('gtk3' 'webkit2gtk-4.1')
+optdepends=('fuse3: local file-library mount support')
+provides=('agentsmith-desktop')
+conflicts=('agentsmith-desktop')
+source=(
+  'agentsmith-desktop'
+  'agentsmith-desktop.desktop'
+  'agentsmith-desktop.png'
+)
+sha256sums=('SKIP' 'SKIP' 'SKIP')
+
+package() {
+  install -Dm755 "${srcdir}/agentsmith-desktop" "${pkgdir}/usr/bin/agentsmith-desktop"
+  install -Dm644 "${srcdir}/agentsmith-desktop.desktop" "${pkgdir}/usr/share/applications/agentsmith-desktop.desktop"
+  install -Dm644 "${srcdir}/agentsmith-desktop.png" "${pkgdir}/usr/share/icons/hicolor/128x128/apps/agentsmith-desktop.png"
+}

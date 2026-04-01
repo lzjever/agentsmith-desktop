@@ -8,6 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
+    "package:arch:metadata": "node scripts/arch-package.js metadata",
+    "package:arch": "node scripts/arch-package.js build",
     "test": "vitest run",
     "test:ui": "vitest --ui",
     "typecheck": "tsc --noEmit"

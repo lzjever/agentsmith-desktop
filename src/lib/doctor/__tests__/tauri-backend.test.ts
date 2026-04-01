@@ -31,4 +31,23 @@ describe('createTauriDoctorService', () => {
       url: 'https://winfsp.dev/rel/',
     });
   });
+
+  it('invokes the tauri doctor handoff command', async () => {
+    const invokeImpl = vi.fn().mockResolvedValue(undefined);
+    const service = createTauriDoctorService(invokeImpl);
+
+    await service.handoffGuidanceAction({
+      key: 'winfsp',
+      message: 'Install WinFsp on this machine, then refresh diagnostics before mounting libraries.',
+      url: 'https://winfsp.dev/rel/',
+      label: 'Open installer',
+      installer_key: 'winfsp',
+    });
+
+    expect(invokeImpl).toHaveBeenCalledWith('handoff_doctor_action', {
+      actionKey: 'winfsp',
+      installerKey: 'winfsp',
+      url: 'https://winfsp.dev/rel/',
+    });
+  });
 });
