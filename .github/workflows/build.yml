@@ -102,7 +102,9 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml
 
       - name: Build desktop binary for Arch package
-        run: npm run tauri:build -- --bundles none
+        run: |
+          npm run build
+          cargo build --manifest-path src-tauri/Cargo.toml --release
 
       - name: Build Arch package
         run: |
