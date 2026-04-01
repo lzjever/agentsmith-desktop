@@ -20,4 +20,15 @@ describe('createTauriDoctorService', () => {
       detail: '/usr/bin/juicefs',
     });
   });
+
+  it('invokes the tauri external opener command', async () => {
+    const invokeImpl = vi.fn().mockResolvedValue(undefined);
+    const service = createTauriDoctorService(invokeImpl);
+
+    await service.openExternalUrl('https://winfsp.dev/rel/');
+
+    expect(invokeImpl).toHaveBeenCalledWith('open_external_url', {
+      url: 'https://winfsp.dev/rel/',
+    });
+  });
 });

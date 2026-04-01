@@ -1,5 +1,5 @@
 import type { FileLibraryDesktopMountAccess } from '../../../types';
-import { createDesktopMountService, createInMemoryMountBackend } from '../service';
+import { createDesktopMountService, createInMemoryMountBackend, type DesktopMountBackend } from '../service';
 
 const ACCESS: FileLibraryDesktopMountAccess = {
   filesystem_name: 'fs_demo',
@@ -75,5 +75,24 @@ describe('createDesktopMountService', () => {
       workspaceId: '',
       access: ACCESS,
     })).rejects.toThrow('desktop_library_mount_context_missing');
+  });
+
+  it('opens a mount target through the backend', async () => {
+    const backend: DesktopMountBackend = {
+      activate: vi.fn().mockResolvedValue({
+        mountTarget: '/home/user/AgentSmith/ws_default/lib_demo',
+      }),
+      deactivate: vi.fn().mockResolvedValue(undefined),
+      stopAll: vi.fn().mockResolvedValue(undefined),
+      openPath: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = createDesktopMountService({
+      platform: 'linux',
+      backend,
+    });
+
+    await service.openPath('/home/user/AgentSmith/ws_default/lib_demo');
+
+    expect(backend.openPath).toHaveBeenCalledWith('/home/user/AgentSmith/ws_default/lib_demo');
   });
 });

@@ -60,6 +60,17 @@ describe('createTauriMountBackend', () => {
     await backend.stopAll();
     expect(invokeImpl).toHaveBeenNthCalledWith(3, 'stop_all_mounts');
   });
+
+  it('invokes the tauri open-path command', async () => {
+    const invokeImpl = vi.fn().mockResolvedValue(undefined);
+    const backend = createTauriMountBackend(invokeImpl);
+
+    await backend.openPath('/home/user/AgentSmith/ws_default/lib_demo');
+
+    expect(invokeImpl).toHaveBeenCalledWith('open_path', {
+      path: '/home/user/AgentSmith/ws_default/lib_demo',
+    });
+  });
 });
 
 describe('isTauriRuntimeAvailable', () => {

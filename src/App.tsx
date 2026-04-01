@@ -19,7 +19,6 @@ import { normalizeDeploymentBaseUrl } from './lib/deployment/normalize';
 import {
   assertDesktopMountReady,
   createFallbackDoctorService,
-  getDesktopDoctorGuidance,
   getDesktopDoctorGuidanceActions,
   type DesktopDoctorService,
 } from './lib/doctor/service';
@@ -154,10 +153,6 @@ export function App(props: {
     }
   }, [doctorService]);
 
-  const doctorGuidance = React.useMemo(() => getDesktopDoctorGuidance({
-    checks: state.diagnostics.checks,
-    platform,
-  }), [platform, state.diagnostics.checks]);
   const doctorGuidanceActions = React.useMemo(() => getDesktopDoctorGuidanceActions({
     checks: state.diagnostics.checks,
     platform,
@@ -396,7 +391,7 @@ export function App(props: {
               <span className="muted">{check.detail}</span>
             </div>
           ))}
-          {doctorGuidance.length > 0 ? (
+          {doctorGuidanceActions.length > 0 ? (
             <div data-testid="desktop__doctor-guidance">
               {doctorGuidanceActions.map((guidance) => (
                 <div key={guidance.key} className="muted">
@@ -404,7 +399,7 @@ export function App(props: {
                   <button
                     type="button"
                     data-testid={`desktop__doctor-action--${guidance.key}`}
-                    onClick={() => window.open(guidance.url, '_blank', 'noopener,noreferrer')}
+                    onClick={() => void doctorService.openExternalUrl(guidance.url)}
                   >
                     {guidance.label}
                   </button>
@@ -430,7 +425,16 @@ export function App(props: {
                     <span className="muted">{library.created_at}</span>
                     <span className="muted" data-testid={`desktop__library-mount-state--${library.id}`}>{mountStatus}</span>
                     {mountTarget ? (
-                      <span className="muted" data-testid={`desktop__library-mount-target--${library.id}`}>{mountTarget}</span>
+                      <>
+                        <span className="muted" data-testid={`desktop__library-mount-target--${library.id}`}>{mountTarget}</span>
+                        <button
+                          type="button"
+                          data-testid={`desktop__library-open-target--${library.id}`}
+                          onClick={() => void mountService.openPath(mountTarget)}
+                        >
+                          Open local folder
+                        </button>
+                      </>
                     ) : null}
                     <input
                       type="text"

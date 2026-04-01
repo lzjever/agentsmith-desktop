@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use agentsmith_desktop_core::{
-    build_mount_command_with_executable, mark_mount_active, mark_mount_failed,
+    build_mount_command_with_executable, build_open_command_for_os, mark_mount_active, mark_mount_failed,
     resolve_juicefs_executable, run_doctor_checks as core_run_doctor_checks, DoctorCheck,
     MountLifecycleState, MountRecord, MountSpec,
 };
@@ -44,6 +44,19 @@ fn stop_child_process(child: &mut Child) -> Result<(), String> {
         }
         Err(error) => Err(format!("desktop_mount_probe_failed:{error}")),
     }
+}
+
+fn open_with_system(target: &str) -> Result<(), String> {
+    let command_spec = build_open_command_for_os(std::env::consts::OS, target);
+    let mut command = Command::new(&command_spec.executable);
+    command.args(&command_spec.args);
+    command.stdin(Stdio::null());
+    command.stdout(Stdio::null());
+    command.stderr(Stdio::null());
+    command
+        .spawn()
+        .map_err(|error| format!("desktop_open_failed:{error}"))?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -164,6 +177,16 @@ fn run_doctor_checks() -> Result<Vec<DoctorCheck>, String> {
     Ok(core_run_doctor_checks())
 }
 
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    open_with_system(&url)
+}
+
+#[tauri::command]
+fn open_path(path: String) -> Result<(), String> {
+    open_with_system(&path)
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(MountRegistry::default())
@@ -171,7 +194,9 @@ fn main() {
             mount_library,
             unmount_library,
             stop_all_mounts,
-            run_doctor_checks
+            run_doctor_checks,
+            open_external_url,
+            open_path
         ])
         .run(tauri::generate_context!())
         .expect("failed to run AgentSmith Desktop");

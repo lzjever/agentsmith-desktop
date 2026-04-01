@@ -3,6 +3,7 @@ import type { DesktopPlatform } from '../mounts/paths';
 
 export interface DesktopDoctorService {
   runChecks(): Promise<DesktopDoctorCheck[]>;
+  openExternalUrl(url: string): Promise<void>;
 }
 
 export interface DesktopDoctorGuidanceAction {
@@ -42,6 +43,9 @@ export function createFallbackDoctorService(): DesktopDoctorService {
           detail: 'browser_fallback_runtime',
         },
       ];
+    },
+    async openExternalUrl(url: string) {
+      window.open(url, '_blank', 'noopener,noreferrer');
     },
   };
 }

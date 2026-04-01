@@ -23,6 +23,7 @@ describe('App', () => {
   }]): DesktopDoctorService {
     return {
       runChecks: vi.fn().mockResolvedValue(checks),
+      openExternalUrl: vi.fn().mockResolvedValue(undefined),
     };
   }
 
@@ -58,6 +59,7 @@ describe('App', () => {
       }),
       deactivate: vi.fn().mockResolvedValue(undefined),
       stopAll: vi.fn().mockResolvedValue(undefined),
+      openPath: vi.fn().mockResolvedValue(undefined),
     };
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
@@ -237,6 +239,7 @@ describe('App', () => {
       }),
       deactivate: vi.fn().mockResolvedValue(undefined),
       stopAll: vi.fn().mockResolvedValue(undefined),
+      openPath: vi.fn().mockResolvedValue(undefined),
     };
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
@@ -367,6 +370,7 @@ describe('App', () => {
       }),
       deactivate: vi.fn().mockResolvedValue(undefined),
       stopAll: vi.fn().mockResolvedValue(undefined),
+      openPath: vi.fn().mockResolvedValue(undefined),
     };
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
@@ -453,6 +457,7 @@ describe('App', () => {
       }),
       deactivate: vi.fn().mockResolvedValue(undefined),
       stopAll: vi.fn().mockResolvedValue(undefined),
+      openPath: vi.fn().mockResolvedValue(undefined),
     };
 
     render(<App mountService={mountService} doctorService={createDoctorService()} />);
@@ -528,6 +533,7 @@ describe('App', () => {
             detail: '/usr/bin/fusermount3',
           },
         ]),
+      openExternalUrl: vi.fn().mockResolvedValue(undefined),
     };
 
     render(<App doctorService={doctorService} />);
@@ -543,27 +549,118 @@ describe('App', () => {
   });
 
   it('opens the doctor setup guide for missing prerequisites', async () => {
-    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
-    render(<App doctorService={createDoctorService([
-      {
-        key: 'juicefs',
-        status: 'ready',
-        detail: '/usr/bin/juicefs',
-      },
-      {
-        key: 'fuse',
-        status: 'missing',
-        detail: '/dev/fuse_missing',
-      },
-    ])} />);
+    const doctorService: DesktopDoctorService = {
+      runChecks: vi.fn().mockResolvedValue([
+        {
+          key: 'juicefs',
+          status: 'ready',
+          detail: '/usr/bin/juicefs',
+        },
+        {
+          key: 'fuse',
+          status: 'missing',
+          detail: '/dev/fuse_missing',
+        },
+      ]),
+      openExternalUrl: vi.fn().mockResolvedValue(undefined),
+    };
+    render(<App doctorService={doctorService} />);
 
     const user = userEvent.setup();
     await user.click(await screen.findByTestId('desktop__doctor-action--fuse'));
 
-    expect(openSpy).toHaveBeenCalledWith(
+    expect(doctorService.openExternalUrl).toHaveBeenCalledWith(
       'https://juicefs.com/docs/community/getting-started/installation/',
-      '_blank',
-      'noopener,noreferrer',
     );
+  });
+
+  it('opens an active mount target through the mount service', async () => {
+    const mountService: DesktopMountService = {
+      activate: vi.fn().mockResolvedValue({
+        mountTarget: '/home/user/AgentSmith/ws_default/lib_2',
+      }),
+      deactivate: vi.fn().mockResolvedValue(undefined),
+      stopAll: vi.fn().mockResolvedValue(undefined),
+      openPath: vi.fn().mockResolvedValue(undefined),
+    };
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/api/v1/me/desktop/file-libraries')) {
+        return new Response(JSON.stringify({
+          items: [
+            {
+              id: 'lib_2',
+              workspace_id: 'ws_default',
+              project_id: 'proj_demo',
+              name: 'Design Assets',
+              status: 'ready',
+              created_at: '2026-04-01T12:00:00.000Z',
+            },
+          ],
+        }), { status: 200 });
+      }
+      if (url.endsWith('/api/v1/workspaces/ws_default/projects/proj_demo/file-libraries/lib_2/desktop-mount-access')) {
+        return new Response(JSON.stringify({
+          desktop_mount_access: {
+            filesystem_name: 'fs_demo',
+            metadata_url: 'postgres://demo',
+            storage_bucket_url: 'http://minio.example/fs_demo',
+            deployment_base_url: 'https://agentsmith.example.com',
+            default_mount_roots: {
+              linux: '/home/user/AgentSmith',
+              macos: '/Users/user/AgentSmith',
+              windows: 'X:',
+            },
+            windows_requires_drive_letter: true,
+            created_at: '2026-04-01T12:30:00.000Z',
+          },
+        }), { status: 200 });
+      }
+      throw new Error(`unexpected_fetch_${url}`);
+    });
+    window.localStorage.setItem('agentsmith-desktop:session', JSON.stringify({
+      deployment_base_url: 'https://agentsmith.example.com',
+      auth_config: {
+        deployment_base_url: 'https://agentsmith.example.com',
+        issuer: 'https://agentsmith.example.com/realms/mbos',
+        authorization_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/auth',
+        token_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/token',
+        client_id: 'agentsmith-desktop',
+        scopes: ['openid', 'profile', 'email'],
+        response_type: 'code',
+        pkce_method: 'S256',
+        suggested_callback_origin: 'http://127.0.0.1',
+        suggested_callback_path: '/desktop/auth/callback',
+      },
+      auth_session: {
+        access_token: 'token_a',
+        refresh_token: 'refresh_a',
+        expires_at: 123,
+      },
+      signed_in_user: {
+        id: 'user_1',
+        email: 'user@example.com',
+        name: 'User Example',
+      },
+      libraries: [],
+      active_library_ids: [],
+      library_aliases: {},
+      mount_states: {},
+      diagnostics: {
+        last_mount_error: null,
+        checks: [],
+      },
+    }));
+
+    render(<App mountService={mountService} doctorService={createDoctorService()} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId('desktop__library-toggle--lib_2'));
+    await waitFor(() => {
+      expect(screen.getByTestId('desktop__library-mount-target--lib_2')).toHaveTextContent('/home/user/AgentSmith/ws_default/lib_2');
+    });
+
+    await user.click(screen.getByTestId('desktop__library-open-target--lib_2'));
+
+    expect(mountService.openPath).toHaveBeenCalledWith('/home/user/AgentSmith/ws_default/lib_2');
   });
 });

@@ -67,6 +67,12 @@ pub struct JuicefsCommandSpec {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OpenCommandSpec {
+    pub executable: String,
+    pub args: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DoctorCheckStatus {
     #[serde(rename = "ready")]
     Ready,
@@ -143,6 +149,23 @@ pub fn build_mount_command(spec: &MountSpec) -> JuicefsCommandSpec {
         default_juicefs_binary_name(&spec.platform).to_string(),
         spec,
     )
+}
+
+pub fn build_open_command_for_os(target_os: &str, target: &str) -> OpenCommandSpec {
+    match target_os {
+        "windows" => OpenCommandSpec {
+            executable: "cmd".into(),
+            args: vec!["/C".into(), "start".into(), "".into(), target.into()],
+        },
+        "macos" => OpenCommandSpec {
+            executable: "open".into(),
+            args: vec![target.into()],
+        },
+        _ => OpenCommandSpec {
+            executable: "xdg-open".into(),
+            args: vec![target.into()],
+        },
+    }
 }
 
 pub fn mark_mount_active(record: &MountRecord, mount_target: String) -> MountRecord {
@@ -257,10 +280,10 @@ mod tests {
     use std::{collections::BTreeMap, env, fs};
 
     use super::{
-        build_mount_command, build_mount_command_with_executable, mark_mount_active, mark_mount_failed,
-        resolve_juicefs_executable_from_inputs, restore_mounts, run_doctor_checks, search_path_for_binary,
-        stop_all_mounts, DoctorCheckStatus, JuicefsCommandSpec, MountLifecycleState, MountPlatform,
-        MountRecord, MountSpec,
+        build_mount_command, build_mount_command_with_executable, build_open_command_for_os,
+        mark_mount_active, mark_mount_failed, resolve_juicefs_executable_from_inputs, restore_mounts,
+        run_doctor_checks, search_path_for_binary, stop_all_mounts, DoctorCheckStatus,
+        JuicefsCommandSpec, MountLifecycleState, MountPlatform, MountRecord, MountSpec, OpenCommandSpec,
     };
 
     #[test]
@@ -421,5 +444,32 @@ mod tests {
             juicefs.unwrap().status,
             DoctorCheckStatus::Ready | DoctorCheckStatus::Missing
         ));
+    }
+
+    #[test]
+    fn builds_windows_open_command() {
+        assert_eq!(
+            build_open_command_for_os("windows", "https://example.com/setup"),
+            OpenCommandSpec {
+                executable: "cmd".into(),
+                args: vec![
+                    "/C".into(),
+                    "start".into(),
+                    "".into(),
+                    "https://example.com/setup".into(),
+                ],
+            }
+        );
+    }
+
+    #[test]
+    fn builds_unix_open_command() {
+        assert_eq!(
+            build_open_command_for_os("linux", "/tmp/agentsmith-mount"),
+            OpenCommandSpec {
+                executable: "xdg-open".into(),
+                args: vec!["/tmp/agentsmith-mount".into()],
+            }
+        );
     }
 }

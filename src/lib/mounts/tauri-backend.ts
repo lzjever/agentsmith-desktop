@@ -58,5 +58,8 @@ export function createTauriMountBackend(
     async stopAll(): Promise<void> {
       await invokeImpl('stop_all_mounts');
     },
+    async openPath(path: string): Promise<void> {
+      await invokeImpl('open_path', { path });
+    },
   };
 }

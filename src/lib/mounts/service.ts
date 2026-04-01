@@ -17,6 +17,7 @@ export interface DesktopMountBackend {
   activate(input: DesktopMountBackendActivationInput): Promise<DesktopMountBackendActivationResult>;
   deactivate(libraryId: string): Promise<void>;
   stopAll(): Promise<void>;
+  openPath(path: string): Promise<void>;
 }
 
 export interface DesktopMountService {
@@ -27,6 +28,7 @@ export interface DesktopMountService {
   }): Promise<DesktopMountBackendActivationResult>;
   deactivate(libraryId: string): Promise<void>;
   stopAll(): Promise<void>;
+  openPath(path: string): Promise<void>;
 }
 
 export function createInMemoryMountBackend(args: {
@@ -44,6 +46,9 @@ export function createInMemoryMountBackend(args: {
     },
     async stopAll() {
       activeMounts.clear();
+    },
+    async openPath(_path: string) {
+      return;
     },
   };
 }
@@ -75,6 +80,9 @@ export function createDesktopMountService(args: {
     },
     async stopAll() {
       await args.backend.stopAll();
+    },
+    async openPath(path) {
+      await args.backend.openPath(path);
     },
   };
 }
