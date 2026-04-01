@@ -1,10 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use agentsmith_desktop_core::{
-    build_mount_command_with_executable, build_open_command_for_os, mark_mount_active, mark_mount_failed,
-    resolve_installer_target_from_inputs, resolve_juicefs_executable, DesktopAuthCallbackPayload, DesktopAuthConfig,
-    fetch_desktop_auth_config_from_base_url,
-    listen_for_auth_callback,
+    build_mount_command_with_executable, build_open_command_for_os, expand_mount_target_for_os,
+    mark_mount_active, mark_mount_failed, resolve_installer_target_from_inputs,
+    resolve_juicefs_executable, DesktopAuthCallbackPayload, DesktopAuthConfig,
+    fetch_desktop_auth_config_from_base_url, listen_for_auth_callback,
     run_doctor_checks as core_run_doctor_checks, DoctorCheck, MountLifecycleState, MountRecord,
     MountSpec,
 };
@@ -53,6 +53,13 @@ fn prepare_mount_target(spec: &MountSpec) -> Result<(), String> {
 
     std::fs::create_dir_all(&spec.mount_target)
         .map_err(|error| format!("desktop_mount_target_prepare_failed:{error}"))
+}
+
+fn resolve_mount_target(spec: &MountSpec) -> String {
+    let home_dir = std::env::var("HOME")
+        .ok()
+        .or_else(|| std::env::var("USERPROFILE").ok());
+    expand_mount_target_for_os(std::env::consts::OS, &spec.mount_target, home_dir.as_deref())
 }
 
 fn read_child_stderr(child: &mut Child) -> String {
@@ -154,6 +161,12 @@ fn mount_library(
     state: tauri::State<'_, MountRegistry>,
     request: MountLibraryRequest,
 ) -> Result<MountRecord, String> {
+    let resolved_mount_target = resolve_mount_target(&request.spec);
+    let resolved_spec = MountSpec {
+        mount_target: resolved_mount_target.clone(),
+        ..request.spec.clone()
+    };
+
     {
         let mut entries = state.entries.lock();
         if let Some(existing) = entries.get_mut(&request.library_id) {
@@ -175,10 +188,10 @@ fn mount_library(
         entries.remove(&request.library_id);
     }
 
-    prepare_mount_target(&request.spec)?;
+    prepare_mount_target(&resolved_spec)?;
 
-    let executable = resolve_juicefs_executable(&request.spec.platform)?;
-    let command_spec = build_mount_command_with_executable(executable, &request.spec);
+    let executable = resolve_juicefs_executable(&resolved_spec.platform)?;
+    let command_spec = build_mount_command_with_executable(executable, &resolved_spec);
     let mut command = Command::new(&command_spec.executable);
     command.args(&command_spec.args);
     command.envs(command_spec.env.clone());
@@ -193,7 +206,7 @@ fn mount_library(
             _ => format!("desktop_mount_spawn_failed:{error}"),
         })?;
 
-    wait_for_mount_ready(&mut child, &request.spec)?;
+    wait_for_mount_ready(&mut child, &resolved_spec)?;
 
     let record = mark_mount_active(
         &MountRecord {
@@ -202,13 +215,13 @@ fn mount_library(
             mount_target: None,
             last_error: None,
         },
-        request.spec.mount_target.clone(),
+        resolved_mount_target.clone(),
     );
 
     state.entries.lock().insert(
         request.library_id,
         RunningMount {
-            mount_target: request.spec.mount_target,
+            mount_target: resolved_mount_target,
             child,
         },
     );

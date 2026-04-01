@@ -229,6 +229,34 @@ pub fn build_open_command_for_os(target_os: &str, target: &str) -> OpenCommandSp
     }
 }
 
+pub fn expand_mount_target_for_os(
+    target_os: &str,
+    mount_target: &str,
+    home_dir: Option<&str>,
+) -> String {
+    let trimmed = mount_target.trim();
+    match target_os {
+        "windows" => {
+            if let Some(home) = home_dir.filter(|value| !value.is_empty()) {
+                trimmed.replace("%USERPROFILE%", home)
+            } else {
+                trimmed.to_string()
+            }
+        }
+        _ => {
+            if let Some(home) = home_dir.filter(|value| !value.is_empty()) {
+                if trimmed == "~" {
+                    return home.to_string();
+                }
+                if let Some(rest) = trimmed.strip_prefix("~/") {
+                    return format!("{home}/{rest}");
+                }
+            }
+            trimmed.to_string()
+        }
+    }
+}
+
 pub fn parse_auth_callback_target(
     request_target: &str,
     expected_path: &str,
@@ -433,12 +461,12 @@ mod tests {
 
     use super::{
         build_mount_command, build_mount_command_with_executable, build_open_command_for_os,
-        fetch_desktop_auth_config_from_base_url, listen_for_auth_callback, mark_mount_active,
-        mark_mount_failed, parse_auth_callback_target, resolve_installer_target_from_inputs,
-        resolve_juicefs_executable_from_inputs, restore_mounts, run_doctor_checks,
-        search_path_for_binary, stop_all_mounts, DesktopAuthCallbackPayload, DoctorCheckStatus,
-        JuicefsCommandSpec, MountLifecycleState, MountPlatform, MountRecord, MountSpec,
-        OpenCommandSpec,
+        expand_mount_target_for_os, fetch_desktop_auth_config_from_base_url, listen_for_auth_callback,
+        mark_mount_active, mark_mount_failed, parse_auth_callback_target,
+        resolve_installer_target_from_inputs, resolve_juicefs_executable_from_inputs,
+        restore_mounts, run_doctor_checks, search_path_for_binary, stop_all_mounts,
+        DesktopAuthCallbackPayload, DoctorCheckStatus, JuicefsCommandSpec, MountLifecycleState,
+        MountPlatform, MountRecord, MountSpec, OpenCommandSpec,
     };
 
     #[test]
@@ -649,6 +677,22 @@ mod tests {
                 executable: "xdg-open".into(),
                 args: vec!["/tmp/agentsmith-mount".into()],
             }
+        );
+    }
+
+    #[test]
+    fn expands_unix_mount_target_from_tilde() {
+        assert_eq!(
+            expand_mount_target_for_os("linux", "~/AgentSmith/ws_default/lib_demo", Some("/home/percy")),
+            "/home/percy/AgentSmith/ws_default/lib_demo",
+        );
+    }
+
+    #[test]
+    fn expands_windows_mount_target_from_userprofile() {
+        assert_eq!(
+            expand_mount_target_for_os("windows", "%USERPROFILE%\\AgentSmith", Some("C:\\Users\\percy")),
+            "C:\\Users\\percy\\AgentSmith",
         );
     }
 
