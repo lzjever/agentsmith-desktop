@@ -1,5 +1,10 @@
 import type { FileLibraryDesktopMountAccess } from '../../../types';
-import { createDesktopMountService, createInMemoryMountBackend, type DesktopMountBackend } from '../service';
+import {
+  createDesktopMountService,
+  createInMemoryMountBackend,
+  normalizeDesktopMountMetadataUrl,
+  type DesktopMountBackend,
+} from '../service';
 
 const ACCESS: FileLibraryDesktopMountAccess = {
   filesystem_name: 'fs_demo',
@@ -16,6 +21,14 @@ const ACCESS: FileLibraryDesktopMountAccess = {
 };
 
 describe('createDesktopMountService', () => {
+  it('normalizes localhost postgres metadata urls for desktop runtime', () => {
+    expect(
+      normalizeDesktopMountMetadataUrl(
+        'postgres://user:pass@localhost:15432/db_name?sslmode=disable',
+      ),
+    ).toBe('postgres://user:pass@127.0.0.1:15432/db_name?sslmode=disable');
+  });
+
   it('activates a mount and returns a mount target', async () => {
     const service = createDesktopMountService({
       platform: 'linux',
@@ -118,6 +131,39 @@ describe('createDesktopMountService', () => {
 
     expect(backend.activate).toHaveBeenCalledWith(expect.objectContaining({
       mountTarget: '/home/user/AgentSmith/ws_default/lib_demo',
+      access: expect.objectContaining({
+        metadata_url: 'postgres://demo',
+      }),
+    }));
+  });
+
+  it('passes normalized localhost postgres metadata to the backend', async () => {
+    const backend: DesktopMountBackend = {
+      activate: vi.fn().mockResolvedValue({
+        mountTarget: '/home/user/AgentSmith/ws_default/lib_demo',
+      }),
+      deactivate: vi.fn().mockResolvedValue(undefined),
+      stopAll: vi.fn().mockResolvedValue(undefined),
+      openPath: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = createDesktopMountService({
+      platform: 'linux',
+      backend,
+    });
+
+    await service.activate({
+      libraryId: 'lib_demo',
+      workspaceId: 'ws_default',
+      access: {
+        ...ACCESS,
+        metadata_url: 'postgres://user:pass@localhost:15432/db_name?sslmode=disable',
+      },
+    });
+
+    expect(backend.activate).toHaveBeenCalledWith(expect.objectContaining({
+      access: expect.objectContaining({
+        metadata_url: 'postgres://user:pass@127.0.0.1:15432/db_name?sslmode=disable',
+      }),
     }));
   });
 });

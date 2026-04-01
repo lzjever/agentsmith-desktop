@@ -127,6 +127,12 @@ fn wait_for_mount_ready(child: &mut Child, spec: &MountSpec) -> Result<(), Strin
     })
 }
 
+fn should_retry_mount(error: &str) -> bool {
+    error.contains("failed to receive message")
+        || error.contains("connection reset by peer")
+        || error.contains("tls error")
+}
+
 fn stop_child_process(child: &mut Child) -> Result<(), String> {
     match child.try_wait() {
         Ok(Some(_)) => Ok(()),
@@ -192,21 +198,47 @@ fn mount_library(
 
     let executable = resolve_juicefs_executable(&resolved_spec.platform)?;
     let command_spec = build_mount_command_with_executable(executable, &resolved_spec);
-    let mut command = Command::new(&command_spec.executable);
-    command.args(&command_spec.args);
-    command.envs(command_spec.env.clone());
-    command.stdin(Stdio::null());
-    command.stdout(Stdio::null());
-    command.stderr(Stdio::piped());
 
-    let mut child = command
-        .spawn()
-        .map_err(|error| match error.kind() {
-            ErrorKind::NotFound => format!("desktop_mount_binary_missing:{}", command_spec.executable),
-            _ => format!("desktop_mount_spawn_failed:{error}"),
-        })?;
+    let child = {
+        let mut last_error: Option<String> = None;
+        let mut running_child: Option<Child> = None;
 
-    wait_for_mount_ready(&mut child, &resolved_spec)?;
+        for attempt in 0..3 {
+            let mut command = Command::new(&command_spec.executable);
+            command.args(&command_spec.args);
+            command.envs(command_spec.env.clone());
+            command.stdin(Stdio::null());
+            command.stdout(Stdio::null());
+            command.stderr(Stdio::piped());
+
+            let mut next_child = command
+                .spawn()
+                .map_err(|error| match error.kind() {
+                    ErrorKind::NotFound => format!("desktop_mount_binary_missing:{}", command_spec.executable),
+                    _ => format!("desktop_mount_spawn_failed:{error}"),
+                })?;
+
+            match wait_for_mount_ready(&mut next_child, &resolved_spec) {
+                Ok(()) => {
+                    running_child = Some(next_child);
+                    last_error = None;
+                    break;
+                }
+                Err(error) => {
+                    last_error = Some(error.clone());
+                    if attempt < 2 && should_retry_mount(&error) {
+                        thread::sleep(Duration::from_millis(250));
+                        continue;
+                    }
+                    return Err(error);
+                }
+            }
+        }
+
+        running_child.ok_or_else(|| {
+            last_error.unwrap_or_else(|| "desktop_mount_failed".to_string())
+        })?
+    };
 
     let record = mark_mount_active(
         &MountRecord {

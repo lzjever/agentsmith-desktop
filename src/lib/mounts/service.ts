@@ -31,6 +31,19 @@ export interface DesktopMountService {
   openPath(path: string): Promise<void>;
 }
 
+export function normalizeDesktopMountMetadataUrl(metadataUrl: string): string {
+  try {
+    const parsed = new URL(metadataUrl);
+    if (parsed.protocol === 'postgres:' && parsed.hostname === 'localhost') {
+      parsed.hostname = '127.0.0.1';
+      return parsed.toString();
+    }
+    return metadataUrl;
+  } catch {
+    return metadataUrl;
+  }
+}
+
 export function createInMemoryMountBackend(args: {
   platform: DesktopPlatform;
 }): DesktopMountBackend {
@@ -73,6 +86,10 @@ export function createDesktopMountService(args: {
         ...input,
         platform: args.platform,
         mountTarget,
+        access: {
+          ...input.access,
+          metadata_url: normalizeDesktopMountMetadataUrl(input.access.metadata_url),
+        },
       });
     },
     async deactivate(libraryId) {

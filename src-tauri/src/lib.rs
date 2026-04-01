@@ -188,20 +188,24 @@ pub fn build_mount_command_with_executable(
         "mount".to_string(),
         spec.metadata_url.clone(),
         spec.mount_target.clone(),
-        "--name".to_string(),
-        spec.filesystem_name.clone(),
     ];
-    if matches!(spec.platform, MountPlatform::Windows) {
-        args.push("--as-drive".to_string());
-    }
-    let mut env = BTreeMap::new();
     if let Some(storage_bucket_url) = &spec.storage_bucket_url {
-        env.insert("JFS_STORAGE".to_string(), storage_bucket_url.clone());
+        args.push("--bucket".to_string());
+        args.push(storage_bucket_url.clone());
     }
+    args.extend([
+        "--check-storage".to_string(),
+        "--attr-cache".to_string(),
+        "0".to_string(),
+        "--entry-cache".to_string(),
+        "0".to_string(),
+        "--dir-entry-cache".to_string(),
+        "0".to_string(),
+    ]);
     JuicefsCommandSpec {
         executable,
         args,
-        env,
+        env: BTreeMap::new(),
     }
 }
 
@@ -516,13 +520,17 @@ mod tests {
                     "mount".into(),
                     "postgres://demo".into(),
                     "/home/user/AgentSmith/ws/lib".into(),
-                    "--name".into(),
-                    "fs_demo".into()
+                    "--bucket".into(),
+                    "http://minio.example/bucket".into(),
+                    "--check-storage".into(),
+                    "--attr-cache".into(),
+                    "0".into(),
+                    "--entry-cache".into(),
+                    "0".into(),
+                    "--dir-entry-cache".into(),
+                    "0".into(),
                 ],
-                env: BTreeMap::from([(
-                    "JFS_STORAGE".into(),
-                    "http://minio.example/bucket".into()
-                )]),
+                env: BTreeMap::new(),
             }
         );
     }
@@ -537,7 +545,8 @@ mod tests {
             storage_bucket_url: None,
         });
         assert_eq!(command.executable, "juicefs.exe");
-        assert!(command.args.contains(&"--as-drive".into()));
+        assert!(!command.args.contains(&"--as-drive".into()));
+        assert!(command.args.contains(&"--check-storage".into()));
     }
 
     #[test]
