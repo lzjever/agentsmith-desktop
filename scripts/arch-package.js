@@ -94,10 +94,17 @@ export function writeArchMetadata(rootDir) {
     });
     writeFileSync(paths.srcinfoPath, srcinfo, 'utf8');
   } catch (error) {
-    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+    const stderr =
+      error && typeof error === 'object' && 'stderr' in error && typeof error.stderr === 'string'
+        ? error.stderr
+        : '';
+    const shouldFallback =
+      (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') ||
+      stderr.includes('Running makepkg as root is not allowed');
+    if (shouldFallback) {
       writeFileSync(
         paths.srcinfoPath,
-        '# makepkg is not available on this machine. Regenerate .SRCINFO on Arch-based hosts.\n',
+        '# makepkg is not available or cannot run in this environment. Regenerate .SRCINFO on Arch-based hosts.\n',
         'utf8',
       );
     } else {

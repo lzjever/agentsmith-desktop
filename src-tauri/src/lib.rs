@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, env, path::Path};
+use std::{collections::BTreeMap, env, path::{Path, PathBuf}};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MountLifecycleState {
@@ -91,9 +91,16 @@ pub fn resolve_installer_target_from_inputs(
 
     candidates
         .iter()
-        .map(|relative| installer_dir.join(relative))
+        .map(|relative| join_relative_path(&installer_dir, relative))
         .find(|candidate| candidate.exists())
         .map(|candidate| candidate.display().to_string())
+}
+
+fn join_relative_path(base: &Path, relative: &str) -> PathBuf {
+    relative
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .fold(base.to_path_buf(), |path, segment| path.join(segment))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -301,7 +308,7 @@ pub fn run_doctor_checks() -> Vec<DoctorCheck> {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeMap, env, fs};
+    use std::{collections::BTreeMap, env, fs, path::PathBuf};
 
     use super::{
         build_mount_command, build_mount_command_with_executable, build_open_command_for_os,
@@ -416,9 +423,23 @@ mod tests {
 
     #[test]
     fn searches_path_for_binary() {
-        let path = "/tmp:/usr/bin:/bin";
-        let found = search_path_for_binary(path, &["sh"]);
+        let temp_dir = env::temp_dir().join(format!(
+            "agentsmith-desktop-search-test-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&temp_dir).expect("expected temp dir");
+        let binary_name = if cfg!(target_os = "windows") {
+            "juicefs.exe"
+        } else {
+            "juicefs"
+        };
+        let fake_binary = temp_dir.join(binary_name);
+        fs::write(&fake_binary, b"#!/bin/sh\n").expect("expected fake binary");
+        let path = env::join_paths([temp_dir.as_path()]).expect("expected PATH string");
+        let found = search_path_for_binary(path.to_string_lossy().as_ref(), &[binary_name]);
         assert!(found.is_some());
+        let _ = fs::remove_file(&fake_binary);
+        let _ = fs::remove_dir(&temp_dir);
     }
 
     #[test]
@@ -436,12 +457,22 @@ mod tests {
     fn resolve_juicefs_executable_uses_path_lookup() {
         let temp_dir = env::temp_dir().join(format!("agentsmith-desktop-test-{}", std::process::id()));
         fs::create_dir_all(&temp_dir).expect("expected temp dir");
-        let fake_binary = temp_dir.join("juicefs");
+        let binary_name = if cfg!(target_os = "windows") {
+            "juicefs.exe"
+        } else {
+            "juicefs"
+        };
+        let fake_binary = temp_dir.join(binary_name);
         fs::write(&fake_binary, b"#!/bin/sh\n").expect("expected fake binary");
+        let path = env::join_paths([temp_dir.as_path()]).expect("expected PATH string");
         let resolved = resolve_juicefs_executable_from_inputs(
-            &MountPlatform::Linux,
+            if cfg!(target_os = "windows") {
+                &MountPlatform::Windows
+            } else {
+                &MountPlatform::Linux
+            },
             None,
-            Some(temp_dir.to_string_lossy().as_ref()),
+            Some(path.to_string_lossy().as_ref()),
         )
         .expect("expected PATH lookup to succeed");
         assert_eq!(resolved, fake_binary.display().to_string());
@@ -517,7 +548,8 @@ mod tests {
         fs::write(&installer_file, b"placeholder").expect("expected installer file");
 
         let target = resolve_installer_target_from_inputs("winfsp", Some(&resource_dir), None);
-        assert_eq!(target.as_deref(), Some(installer_file.display().to_string().as_str()));
+        let resolved = target.map(PathBuf::from);
+        assert_eq!(resolved.as_deref(), Some(installer_file.as_path()));
 
         let _ = fs::remove_file(&installer_file);
         let _ = fs::remove_dir_all(&resource_dir);

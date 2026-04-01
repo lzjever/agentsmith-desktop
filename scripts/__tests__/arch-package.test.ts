@@ -61,7 +61,7 @@ describe('arch package helpers', () => {
       const desktopEntry = readFileSync(paths.desktopEntryPath, 'utf8');
 
       expect(pkgbuild).toContain('pkgver=0.1.0');
-      expect(srcinfo).toContain('makepkg is not available');
+      expect(srcinfo).toContain('makepkg is not available or cannot run in this environment');
       expect(desktopEntry).toContain(`Exec=${APP_EXECUTABLE_NAME}`);
     } finally {
       process.env.PATH = originalPath;
