@@ -81,11 +81,42 @@ pub struct DoctorCheck {
     pub detail: String,
 }
 
-pub fn build_mount_command(spec: &MountSpec) -> JuicefsCommandSpec {
-    let executable = match spec.platform {
-        MountPlatform::Windows => "juicefs.exe".to_string(),
-        MountPlatform::Linux | MountPlatform::Macos => "juicefs".to_string(),
-    };
+pub fn default_juicefs_binary_name(platform: &MountPlatform) -> &'static str {
+    match platform {
+        MountPlatform::Windows => "juicefs.exe",
+        MountPlatform::Linux | MountPlatform::Macos => "juicefs",
+    }
+}
+
+pub fn resolve_juicefs_executable_from_inputs(
+    platform: &MountPlatform,
+    override_value: Option<&str>,
+    path_env: Option<&str>,
+) -> Result<String, String> {
+    if let Some(value) = override_value.map(str::trim).filter(|value| !value.is_empty()) {
+        return Ok(value.to_string());
+    }
+
+    let binary_name = default_juicefs_binary_name(platform);
+    if let Some(path) = path_env.and_then(|path| search_path_for_binary(path, &[binary_name])) {
+        return Ok(path);
+    }
+
+    Err(format!("desktop_mount_binary_missing:{binary_name}"))
+}
+
+pub fn resolve_juicefs_executable(platform: &MountPlatform) -> Result<String, String> {
+    let override_value = env::var("AGENTSMITH_DESKTOP_JUICEFS_BIN")
+        .ok()
+        .or_else(|| env::var("JFS_DESKTOP_JUICEFS_BIN").ok());
+    let path_env = env::var("PATH").ok();
+    resolve_juicefs_executable_from_inputs(platform, override_value.as_deref(), path_env.as_deref())
+}
+
+pub fn build_mount_command_with_executable(
+    executable: String,
+    spec: &MountSpec,
+) -> JuicefsCommandSpec {
     let mut args = vec![
         "mount".to_string(),
         spec.metadata_url.clone(),
@@ -105,6 +136,13 @@ pub fn build_mount_command(spec: &MountSpec) -> JuicefsCommandSpec {
         args,
         env,
     }
+}
+
+pub fn build_mount_command(spec: &MountSpec) -> JuicefsCommandSpec {
+    build_mount_command_with_executable(
+        default_juicefs_binary_name(&spec.platform).to_string(),
+        spec,
+    )
 }
 
 pub fn mark_mount_active(record: &MountRecord, mount_target: String) -> MountRecord {
@@ -216,12 +254,13 @@ pub fn run_doctor_checks() -> Vec<DoctorCheck> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::{collections::BTreeMap, env, fs};
 
     use super::{
-        build_mount_command, mark_mount_active, mark_mount_failed, restore_mounts, run_doctor_checks,
-        search_path_for_binary, stop_all_mounts, DoctorCheckStatus, JuicefsCommandSpec,
-        MountLifecycleState, MountPlatform, MountRecord, MountSpec,
+        build_mount_command, build_mount_command_with_executable, mark_mount_active, mark_mount_failed,
+        resolve_juicefs_executable_from_inputs, restore_mounts, run_doctor_checks, search_path_for_binary,
+        stop_all_mounts, DoctorCheckStatus, JuicefsCommandSpec, MountLifecycleState, MountPlatform,
+        MountRecord, MountSpec,
     };
 
     #[test]
@@ -296,6 +335,21 @@ mod tests {
     }
 
     #[test]
+    fn builds_mount_command_with_explicit_executable() {
+        let command = build_mount_command_with_executable(
+            "/opt/agentsmith/bin/juicefs".into(),
+            &MountSpec {
+                platform: MountPlatform::Linux,
+                filesystem_name: "fs_demo".into(),
+                metadata_url: "postgres://demo".into(),
+                mount_target: "/tmp/demo".into(),
+                storage_bucket_url: None,
+            },
+        );
+        assert_eq!(command.executable, "/opt/agentsmith/bin/juicefs");
+    }
+
+    #[test]
     fn marks_mount_active_and_failed() {
         let record = MountRecord {
             library_id: "lib_1".into(),
@@ -317,6 +371,45 @@ mod tests {
         let path = "/tmp:/usr/bin:/bin";
         let found = search_path_for_binary(path, &["sh"]);
         assert!(found.is_some());
+    }
+
+    #[test]
+    fn resolve_juicefs_executable_prefers_override() {
+        let resolved = resolve_juicefs_executable_from_inputs(
+            &MountPlatform::Linux,
+            Some("/custom/juicefs"),
+            Some("/usr/bin:/bin"),
+        )
+        .expect("expected override to be used");
+        assert_eq!(resolved, "/custom/juicefs");
+    }
+
+    #[test]
+    fn resolve_juicefs_executable_uses_path_lookup() {
+        let temp_dir = env::temp_dir().join(format!("agentsmith-desktop-test-{}", std::process::id()));
+        fs::create_dir_all(&temp_dir).expect("expected temp dir");
+        let fake_binary = temp_dir.join("juicefs");
+        fs::write(&fake_binary, b"#!/bin/sh\n").expect("expected fake binary");
+        let resolved = resolve_juicefs_executable_from_inputs(
+            &MountPlatform::Linux,
+            None,
+            Some(temp_dir.to_string_lossy().as_ref()),
+        )
+        .expect("expected PATH lookup to succeed");
+        assert_eq!(resolved, fake_binary.display().to_string());
+        let _ = fs::remove_file(&fake_binary);
+        let _ = fs::remove_dir(&temp_dir);
+    }
+
+    #[test]
+    fn resolve_juicefs_executable_returns_missing_error_when_unavailable() {
+        let error = resolve_juicefs_executable_from_inputs(
+            &MountPlatform::Linux,
+            None,
+            Some("/definitely-not-a-real-bin-dir"),
+        )
+        .expect_err("expected missing binary error");
+        assert_eq!(error, "desktop_mount_binary_missing:juicefs");
     }
 
     #[test]

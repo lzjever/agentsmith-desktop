@@ -1,12 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use agentsmith_desktop_core::{
-    build_mount_command, mark_mount_active, mark_mount_failed, run_doctor_checks as core_run_doctor_checks,
-    DoctorCheck, MountLifecycleState, MountRecord, MountSpec,
+    build_mount_command_with_executable, mark_mount_active, mark_mount_failed,
+    resolve_juicefs_executable, run_doctor_checks as core_run_doctor_checks, DoctorCheck,
+    MountLifecycleState, MountRecord, MountSpec,
 };
 use parking_lot::Mutex;
 use std::{
     collections::HashMap,
+    io::ErrorKind,
     process::{Child, Command, Stdio},
 };
 
@@ -28,21 +30,50 @@ struct MountLibraryRequest {
     spec: MountSpec,
 }
 
+fn stop_child_process(child: &mut Child) -> Result<(), String> {
+    match child.try_wait() {
+        Ok(Some(_)) => Ok(()),
+        Ok(None) => {
+            child
+                .kill()
+                .map_err(|error| format!("desktop_mount_stop_failed:{error}"))?;
+            child
+                .wait()
+                .map_err(|error| format!("desktop_mount_wait_failed:{error}"))?;
+            Ok(())
+        }
+        Err(error) => Err(format!("desktop_mount_probe_failed:{error}")),
+    }
+}
+
 #[tauri::command]
 fn mount_library(
     state: tauri::State<'_, MountRegistry>,
     request: MountLibraryRequest,
 ) -> Result<MountRecord, String> {
-    if let Some(existing) = state.entries.lock().get(&request.library_id) {
-        return Ok(MountRecord {
-            library_id: request.library_id,
-            state: MountLifecycleState::Active,
-            mount_target: Some(existing.mount_target.clone()),
-            last_error: None,
-        });
+    {
+        let mut entries = state.entries.lock();
+        if let Some(existing) = entries.get_mut(&request.library_id) {
+            match existing.child.try_wait() {
+                Ok(Some(_)) => {}
+                Ok(None) => {
+                    return Ok(MountRecord {
+                        library_id: request.library_id,
+                        state: MountLifecycleState::Active,
+                        mount_target: Some(existing.mount_target.clone()),
+                        last_error: None,
+                    });
+                }
+                Err(error) => {
+                    return Err(format!("desktop_mount_probe_failed:{error}"));
+                }
+            }
+        }
+        entries.remove(&request.library_id);
     }
 
-    let command_spec = build_mount_command(&request.spec);
+    let executable = resolve_juicefs_executable(&request.spec.platform)?;
+    let command_spec = build_mount_command_with_executable(executable, &request.spec);
     let mut command = Command::new(&command_spec.executable);
     command.args(&command_spec.args);
     command.envs(command_spec.env.clone());
@@ -52,7 +83,10 @@ fn mount_library(
 
     let child = command
         .spawn()
-        .map_err(|error| format!("desktop_mount_spawn_failed:{error}"))?;
+        .map_err(|error| match error.kind() {
+            ErrorKind::NotFound => format!("desktop_mount_binary_missing:{}", command_spec.executable),
+            _ => format!("desktop_mount_spawn_failed:{error}"),
+        })?;
 
     let record = mark_mount_active(
         &MountRecord {
@@ -84,11 +118,7 @@ fn unmount_library(
     let mut running = entries
         .remove(&libraryId)
         .ok_or_else(|| "desktop_mount_not_found".to_string())?;
-    running
-        .child
-        .kill()
-        .map_err(|error| format!("desktop_unmount_kill_failed:{error}"))?;
-    let _ = running.child.wait();
+    stop_child_process(&mut running.child)?;
     Ok(MountRecord {
         library_id: libraryId,
         state: MountLifecycleState::Idle,
@@ -104,9 +134,8 @@ fn stop_all_mounts(state: tauri::State<'_, MountRegistry>) -> Result<Vec<MountRe
     let mut stopped = Vec::new();
     for library_id in library_ids {
         if let Some(mut running) = entries.remove(&library_id) {
-            let result = match running.child.kill() {
+            let result = match stop_child_process(&mut running.child) {
                 Ok(_) => {
-                    let _ = running.child.wait();
                     MountRecord {
                         library_id,
                         state: MountLifecycleState::Idle,
