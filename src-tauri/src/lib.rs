@@ -1,5 +1,13 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, env, path::{Path, PathBuf}};
+use std::{
+    collections::BTreeMap,
+    env,
+    io::{Read, Write},
+    net::{TcpListener, TcpStream},
+    path::{Path, PathBuf},
+    time::Duration,
+};
+use url::Url;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MountLifecycleState {
@@ -70,6 +78,13 @@ pub struct JuicefsCommandSpec {
 pub struct OpenCommandSpec {
     pub executable: String,
     pub args: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DesktopAuthCallbackPayload {
+    pub code: Option<String>,
+    pub state: Option<String>,
+    pub error: Option<String>,
 }
 
 pub fn resolve_installer_target_from_inputs(
@@ -199,6 +214,75 @@ pub fn build_open_command_for_os(target_os: &str, target: &str) -> OpenCommandSp
     }
 }
 
+pub fn parse_auth_callback_target(
+    request_target: &str,
+    expected_path: &str,
+) -> Result<DesktopAuthCallbackPayload, String> {
+    let parsed = Url::parse(&format!("http://127.0.0.1{request_target}"))
+        .map_err(|error| format!("desktop_auth_callback_parse_failed:{error}"))?;
+    if parsed.path() != expected_path {
+        return Err("desktop_auth_callback_path_mismatch".into());
+    }
+    Ok(DesktopAuthCallbackPayload {
+        code: parsed
+            .query_pairs()
+            .find(|(key, _)| key == "code")
+            .map(|(_, value)| value.to_string()),
+        state: parsed
+            .query_pairs()
+            .find(|(key, _)| key == "state")
+            .map(|(_, value)| value.to_string()),
+        error: parsed
+            .query_pairs()
+            .find(|(key, _)| key == "error")
+            .map(|(_, value)| value.to_string()),
+    })
+}
+
+fn write_auth_callback_response(stream: &mut TcpStream) -> Result<(), String> {
+    stream
+        .write_all(
+            b"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n<html><body><h1>AgentSmith Desktop</h1><p>Sign-in complete. You can return to the desktop app.</p></body></html>",
+        )
+        .map_err(|error| format!("desktop_auth_callback_response_failed:{error}"))
+}
+
+pub fn listen_for_auth_callback(
+    port: u16,
+    expected_path: &str,
+) -> Result<DesktopAuthCallbackPayload, String> {
+    let listener = TcpListener::bind(("127.0.0.1", port))
+        .map_err(|error| format!("desktop_auth_callback_bind_failed:{error}"))?;
+    listener
+        .set_nonblocking(false)
+        .map_err(|error| format!("desktop_auth_callback_bind_failed:{error}"))?;
+    let (mut stream, _) = listener
+        .accept()
+        .map_err(|error| format!("desktop_auth_callback_accept_failed:{error}"))?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(120)))
+        .map_err(|error| format!("desktop_auth_callback_timeout_failed:{error}"))?;
+
+    let mut buffer = [0_u8; 8192];
+    let read = stream
+        .read(&mut buffer)
+        .map_err(|error| format!("desktop_auth_callback_read_failed:{error}"))?;
+    let request = String::from_utf8_lossy(&buffer[..read]);
+    let first_line = request
+        .lines()
+        .next()
+        .ok_or_else(|| "desktop_auth_callback_empty_request".to_string())?;
+    let mut parts = first_line.split_whitespace();
+    let method = parts.next().unwrap_or_default();
+    let request_target = parts.next().unwrap_or_default();
+    if method != "GET" {
+        return Err("desktop_auth_callback_method_invalid".into());
+    }
+    let payload = parse_auth_callback_target(request_target, expected_path)?;
+    write_auth_callback_response(&mut stream)?;
+    Ok(payload)
+}
+
 pub fn mark_mount_active(record: &MountRecord, mount_target: String) -> MountRecord {
     MountRecord {
         library_id: record.library_id.clone(),
@@ -308,14 +392,22 @@ pub fn run_doctor_checks() -> Vec<DoctorCheck> {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeMap, env, fs, path::PathBuf};
+    use std::{
+        collections::BTreeMap,
+        env,
+        fs,
+        io::{Read, Write},
+        net::{TcpListener, TcpStream},
+        path::PathBuf,
+    };
 
     use super::{
         build_mount_command, build_mount_command_with_executable, build_open_command_for_os,
-        mark_mount_active, mark_mount_failed, resolve_installer_target_from_inputs,
-        resolve_juicefs_executable_from_inputs, restore_mounts, run_doctor_checks, search_path_for_binary,
-        stop_all_mounts, DoctorCheckStatus, JuicefsCommandSpec, MountLifecycleState, MountPlatform,
-        MountRecord, MountSpec, OpenCommandSpec,
+        listen_for_auth_callback, mark_mount_active, mark_mount_failed, parse_auth_callback_target,
+        resolve_installer_target_from_inputs, resolve_juicefs_executable_from_inputs, restore_mounts,
+        run_doctor_checks, search_path_for_binary, stop_all_mounts, DesktopAuthCallbackPayload,
+        DoctorCheckStatus, JuicefsCommandSpec, MountLifecycleState, MountPlatform, MountRecord,
+        MountSpec, OpenCommandSpec,
     };
 
     #[test]
@@ -553,5 +645,56 @@ mod tests {
 
         let _ = fs::remove_file(&installer_file);
         let _ = fs::remove_dir_all(&resource_dir);
+    }
+
+    #[test]
+    fn parses_auth_callback_target() {
+        let payload = parse_auth_callback_target(
+            "/desktop/auth/callback?code=abc123&state=state_123",
+            "/desktop/auth/callback",
+        )
+        .expect("expected callback target");
+        assert_eq!(
+            payload,
+            DesktopAuthCallbackPayload {
+                code: Some("abc123".into()),
+                state: Some("state_123".into()),
+                error: None,
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_auth_callback_path_mismatch() {
+        let error = parse_auth_callback_target(
+            "/wrong/path?code=abc123&state=state_123",
+            "/desktop/auth/callback",
+        )
+        .expect_err("expected mismatch");
+        assert_eq!(error, "desktop_auth_callback_path_mismatch");
+    }
+
+    #[test]
+    fn listens_for_auth_callback_on_localhost() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("expected free port");
+        let port = listener.local_addr().expect("expected addr").port();
+        drop(listener);
+
+        let thread = std::thread::spawn(move || listen_for_auth_callback(port, "/desktop/auth/callback"));
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("expected connection");
+        stream
+            .write_all(
+                b"GET /desktop/auth/callback?code=auth_code&state=auth_state HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
+            )
+            .expect("expected request write");
+        let mut response = String::new();
+        stream.read_to_string(&mut response).expect("expected response");
+
+        let payload = thread.join().expect("expected thread").expect("expected payload");
+        assert!(response.contains("200 OK"));
+        assert_eq!(payload.code.as_deref(), Some("auth_code"));
+        assert_eq!(payload.state.as_deref(), Some("auth_state"));
     }
 }

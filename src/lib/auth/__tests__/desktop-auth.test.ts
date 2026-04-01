@@ -8,6 +8,7 @@ import {
 
 const AUTH_CONFIG: DesktopAuthConfig = {
   deployment_base_url: 'https://agentsmith.example.com',
+  api_base_url: 'https://api.agentsmith.example.com/api/v1',
   issuer: 'https://agentsmith.example.com/realms/mbos',
   authorization_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/auth',
   token_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/token',

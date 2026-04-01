@@ -30,6 +30,7 @@ export interface SignedInUser {
 
 export interface DesktopAuthConfig {
   deployment_base_url: string;
+  api_base_url?: string;
   issuer: string;
   authorization_endpoint: string;
   token_endpoint: string;

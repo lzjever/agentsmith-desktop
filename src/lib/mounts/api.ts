@@ -9,7 +9,7 @@ export interface DesktopMountAccessExchangeResponse {
 }
 
 export async function fetchDesktopMountAccess(args: {
-  deploymentBaseUrl: string;
+  apiBaseUrl: string;
   authSession: DesktopAuthSession;
   workspaceId: string;
   projectId: string;
@@ -17,7 +17,7 @@ export async function fetchDesktopMountAccess(args: {
   fetchImpl?: DesktopMountAccessFetch;
 }): Promise<FileLibraryDesktopMountAccess> {
   const response = await (args.fetchImpl ?? fetch)(
-    `${args.deploymentBaseUrl}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/desktop-mount-access`,
+    `${args.apiBaseUrl}/workspaces/${args.workspaceId}/projects/${args.projectId}/file-libraries/${args.libraryId}/desktop-mount-access`,
     {
       method: 'POST',
       headers: {

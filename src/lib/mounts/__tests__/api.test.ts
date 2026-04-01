@@ -19,7 +19,7 @@ describe('fetchDesktopMountAccess', () => {
     }), { status: 200 }));
 
     const access = await fetchDesktopMountAccess({
-      deploymentBaseUrl: 'https://agentsmith.example.com',
+      apiBaseUrl: 'https://api.agentsmith.example.com/api/v1',
       authSession: {
         access_token: 'token_a',
         refresh_token: null,
@@ -32,7 +32,7 @@ describe('fetchDesktopMountAccess', () => {
     });
 
     expect(fetchImpl).toHaveBeenCalledWith(
-      'https://agentsmith.example.com/api/v1/workspaces/ws_default/projects/proj_demo/file-libraries/lib_demo/desktop-mount-access',
+      'https://api.agentsmith.example.com/api/v1/workspaces/ws_default/projects/proj_demo/file-libraries/lib_demo/desktop-mount-access',
       expect.objectContaining({
         method: 'POST',
         headers: {
@@ -47,7 +47,7 @@ describe('fetchDesktopMountAccess', () => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response('{}', { status: 404 }));
 
     await expect(fetchDesktopMountAccess({
-      deploymentBaseUrl: 'https://agentsmith.example.com',
+      apiBaseUrl: 'https://api.agentsmith.example.com/api/v1',
       authSession: {
         access_token: 'token_a',
         refresh_token: null,

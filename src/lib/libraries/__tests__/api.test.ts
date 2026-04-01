@@ -16,7 +16,7 @@ describe('desktop libraries api', () => {
     }), { status: 200 }));
 
     await expect(fetchDesktopLibraries({
-      deploymentBaseUrl: 'https://agentsmith.example.com',
+      apiBaseUrl: 'https://api.agentsmith.example.com/api/v1',
       authSession: {
         access_token: 'token_a',
         refresh_token: 'refresh_a',
@@ -35,7 +35,7 @@ describe('desktop libraries api', () => {
     ]);
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://agentsmith.example.com/api/v1/me/desktop/file-libraries',
+      'https://api.agentsmith.example.com/api/v1/me/desktop/file-libraries',
       {
         method: 'GET',
         headers: {

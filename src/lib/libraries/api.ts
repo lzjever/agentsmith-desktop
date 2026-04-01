@@ -9,11 +9,11 @@ export interface DesktopLibrariesListResponse {
 }
 
 export async function fetchDesktopLibraries(args: {
-  deploymentBaseUrl: string;
+  apiBaseUrl: string;
   authSession: DesktopAuthSession;
   fetchImpl?: DesktopLibrariesFetch;
 }): Promise<DesktopLibrary[]> {
-  const response = await (args.fetchImpl ?? fetch)(`${args.deploymentBaseUrl}/api/v1/me/desktop/file-libraries`, {
+  const response = await (args.fetchImpl ?? fetch)(`${args.apiBaseUrl}/me/desktop/file-libraries`, {
     method: 'GET',
     headers: {
       authorization: `Bearer ${args.authSession.access_token}`,

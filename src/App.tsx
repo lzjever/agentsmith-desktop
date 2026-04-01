@@ -7,6 +7,7 @@ import {
   fetchDesktopAuthConfig,
   startDesktopAuthorization,
 } from './lib/auth/desktop-auth';
+import { createBrowserAuthRuntime, createTauriAuthRuntime } from './lib/auth/tauri-backend';
 import {
   clearDesktopSession,
   clearPkceContext,
@@ -15,6 +16,7 @@ import {
   saveDesktopSession,
   savePkceContext,
 } from './lib/auth/token-store';
+import type { DesktopAuthRuntime } from './lib/auth/runtime';
 import { normalizeDeploymentBaseUrl } from './lib/deployment/normalize';
 import {
   assertDesktopMountReady,
@@ -46,6 +48,7 @@ import { mergeDesktopLibraries } from './lib/state/session';
 export function App(props: {
   mountService?: DesktopMountService;
   doctorService?: DesktopDoctorService;
+  authRuntime?: DesktopAuthRuntime;
 } = {}) {
   const [state, setState] = React.useState<DesktopState>(DEFAULT_DESKTOP_STATE);
   const [deploymentInput, setDeploymentInput] = React.useState('https://agentsmith.example.com');
@@ -68,6 +71,14 @@ export function App(props: {
         : createFallbackDoctorService()
     ),
     [props.doctorService],
+  );
+  const authRuntime = React.useMemo(
+    () => props.authRuntime ?? (
+      isTauriRuntimeAvailable()
+        ? createTauriAuthRuntime()
+        : createBrowserAuthRuntime()
+    ),
+    [props.authRuntime],
   );
 
   React.useEffect(() => {
@@ -158,23 +169,28 @@ export function App(props: {
     platform,
   }), [platform, state.diagnostics.checks]);
 
-  React.useEffect(() => {
-    const callback = parseDesktopAuthCallbackUrl(window.location.href);
+  const completeSignInFromCallback = React.useCallback(async (callback: ReturnType<typeof parseDesktopAuthCallbackUrl>) => {
     const pkce = loadPkceContext(window.sessionStorage);
-    if (!callback.code || !callback.state || callback.error || !pkce || !state.auth_config) {
+    if (!callback.code || !callback.state || !pkce || !state.auth_config) {
+      if (callback.error) {
+        setStatus('error');
+        setError(callback.error);
+      }
       return;
     }
     if (pkce.state !== callback.state) {
       setError('desktop_state_mismatch');
+      setStatus('error');
       return;
     }
     setStatus('completing_sign_in');
-    void exchangeDesktopAuthorizationCode({
-      authConfig: state.auth_config,
-      code: callback.code,
-      verifier: pkce.verifier,
-      callbackUrl: pkce.callback_url,
-    }).then((session) => {
+    try {
+      const session = await exchangeDesktopAuthorizationCode({
+        authConfig: state.auth_config,
+        code: callback.code,
+        verifier: pkce.verifier,
+        callbackUrl: pkce.callback_url,
+      });
       const user = buildSignedInUser(session.access_token);
       setState((current) => {
         const next = completeDesktopSignIn(current, session, user);
@@ -185,19 +201,27 @@ export function App(props: {
       window.history.replaceState({}, '', window.location.pathname);
       setStatus('signed_in');
       setError(null);
-    }).catch((cause: unknown) => {
+    } catch (cause: unknown) {
       setStatus('error');
       setError(cause instanceof Error ? cause.message : 'desktop_login_failed');
-    });
+    }
   }, [state.auth_config]);
 
   React.useEffect(() => {
-    if (!state.auth_session || !state.deployment_base_url) {
+    const callback = parseDesktopAuthCallbackUrl(window.location.href);
+    if (!callback.code && !callback.error) {
+      return;
+    }
+    void completeSignInFromCallback(callback);
+  }, [completeSignInFromCallback]);
+
+  React.useEffect(() => {
+    if (!state.auth_session || !state.deployment_base_url || !state.auth_config) {
       return;
     }
     let cancelled = false;
     void fetchDesktopLibraries({
-      deploymentBaseUrl: state.deployment_base_url,
+      apiBaseUrl: state.auth_config.api_base_url ?? state.deployment_base_url,
       authSession: state.auth_session,
     }).then((libraries) => {
       if (cancelled) return;
@@ -209,7 +233,7 @@ export function App(props: {
     return () => {
       cancelled = true;
     };
-  }, [state.auth_session, state.deployment_base_url]);
+  }, [state.auth_config, state.auth_session, state.deployment_base_url]);
 
   const handleConnect = React.useCallback(async () => {
     try {
@@ -241,8 +265,14 @@ export function App(props: {
       callback_url: callbackUrl,
     });
     setStatus('awaiting_browser_sign_in');
-    window.location.assign(start.authorizationUrl);
-  }, [state.auth_config, state.deployment_base_url]);
+    const callback = await authRuntime.startInteractiveSignIn({
+      authorizationUrl: start.authorizationUrl,
+      callbackUrl,
+    });
+    if (callback) {
+      await completeSignInFromCallback(callback);
+    }
+  }, [authRuntime, completeSignInFromCallback, state.auth_config, state.deployment_base_url]);
 
   const handleSignOut = React.useCallback(() => {
     const next = signOutDesktop(state);
@@ -260,7 +290,7 @@ export function App(props: {
   }, [state]);
 
   const handleActivateLibrary = React.useCallback(async (library: DesktopLibrary) => {
-    if (!state.auth_session || !state.deployment_base_url || !library.workspace_id || !library.project_id) {
+    if (!state.auth_session || !state.deployment_base_url || !state.auth_config || !library.workspace_id || !library.project_id) {
       setState((current) => markLibraryMountFailed(current, library.id, 'desktop_library_mount_context_missing'));
       return;
     }
@@ -281,7 +311,7 @@ export function App(props: {
         platform,
       });
       const access = await fetchDesktopMountAccess({
-        deploymentBaseUrl: state.deployment_base_url,
+        apiBaseUrl: state.auth_config.api_base_url ?? state.deployment_base_url,
         authSession: state.auth_session,
         workspaceId: library.workspace_id,
         projectId: library.project_id,

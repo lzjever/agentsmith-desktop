@@ -1,9 +1,12 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from '../App';
+import type { DesktopAuthRuntime } from '../lib/auth/runtime';
 import type { DesktopDoctorService } from '../lib/doctor/service';
 import type { DesktopMountService } from '../lib/mounts/service';
 import type { DesktopDoctorCheck } from '../types';
+
+const API_BASE = 'https://agentsmith.example.com/api/v1';
 
 describe('App', () => {
   beforeEach(() => {
@@ -32,6 +35,7 @@ describe('App', () => {
     const user = userEvent.setup();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       deployment_base_url: 'https://agentsmith.example.com',
+      api_base_url: API_BASE,
       issuer: 'https://agentsmith.example.com/realms/mbos',
       authorization_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/auth',
       token_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/token',
@@ -51,6 +55,80 @@ describe('App', () => {
     });
     expect(screen.getByTestId('desktop__signed-in-user')).toHaveTextContent('Not signed in');
     expect(screen.getByTestId('desktop__sign-in')).toBeInTheDocument();
+  });
+
+  it('completes sign-in through the interactive auth runtime and loads libraries', async () => {
+    const user = userEvent.setup();
+    const authRuntime: DesktopAuthRuntime = {
+      startInteractiveSignIn: vi.fn().mockImplementation(async () => {
+        const pkce = JSON.parse(window.sessionStorage.getItem('agentsmith-desktop:pkce') ?? '{}') as {
+          state?: string;
+        };
+        return {
+          code: 'code_123',
+          state: pkce.state ?? null,
+          error: null,
+        };
+      }),
+    };
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith('/api/public/desktop/auth')) {
+        return new Response(JSON.stringify({
+          deployment_base_url: 'https://agentsmith.example.com',
+          api_base_url: API_BASE,
+          issuer: 'https://agentsmith.example.com/realms/mbos',
+          authorization_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/auth',
+          token_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/token',
+          client_id: 'agentsmith-desktop',
+          scopes: ['openid', 'profile', 'email'],
+          response_type: 'code',
+          pkce_method: 'S256',
+          suggested_callback_origin: 'http://127.0.0.1',
+          suggested_callback_path: '/desktop/auth/callback',
+        }), { status: 200 });
+      }
+      if (url.endsWith('/protocol/openid-connect/token') && init?.method === 'POST') {
+        return new Response(JSON.stringify({
+          access_token: [
+            'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0',
+            btoa(JSON.stringify({
+              sub: 'user_1',
+              email: 'user@example.com',
+              name: 'User Example',
+            })).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, ''),
+            '',
+          ].join('.'),
+          refresh_token: 'refresh_123',
+          expires_in: 3600,
+        }), { status: 200 });
+      }
+      if (url.endsWith('/api/v1/me/desktop/file-libraries')) {
+        return new Response(JSON.stringify({
+          items: [
+            {
+              id: 'lib_2',
+              workspace_id: 'ws_default',
+              project_id: 'proj_demo',
+              name: 'Design Assets',
+              status: 'ready',
+              created_at: '2026-04-01T12:00:00.000Z',
+            },
+          ],
+        }), { status: 200 });
+      }
+      throw new Error(`unexpected_fetch_${url}`);
+    });
+
+    render(<App authRuntime={authRuntime} doctorService={createDoctorService()} />);
+    await user.click(screen.getByTestId('desktop__connect-submit'));
+    await user.click(await screen.findByTestId('desktop__sign-in'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('desktop__signed-in-user')).toHaveTextContent('user@example.com');
+    });
+    expect(await screen.findByTestId('desktop__library--lib_2')).toBeInTheDocument();
+    expect(authRuntime.startInteractiveSignIn).toHaveBeenCalled();
   });
 
   it('restores a signed-in session from local storage and toggles activation', async () => {
@@ -109,6 +187,7 @@ describe('App', () => {
       deployment_base_url: 'https://agentsmith.example.com',
       auth_config: {
         deployment_base_url: 'https://agentsmith.example.com',
+        api_base_url: API_BASE,
         issuer: 'https://agentsmith.example.com/realms/mbos',
         authorization_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/auth',
         token_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/token',
@@ -192,6 +271,7 @@ describe('App', () => {
       deployment_base_url: 'https://agentsmith.example.com',
       auth_config: {
         deployment_base_url: 'https://agentsmith.example.com',
+        api_base_url: API_BASE,
         issuer: 'https://agentsmith.example.com/realms/mbos',
         authorization_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/auth',
         token_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/token',
@@ -264,6 +344,7 @@ describe('App', () => {
       deployment_base_url: 'https://agentsmith.example.com',
       auth_config: {
         deployment_base_url: 'https://agentsmith.example.com',
+        api_base_url: API_BASE,
         issuer: 'https://agentsmith.example.com/realms/mbos',
         authorization_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/auth',
         token_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/token',
@@ -328,6 +409,7 @@ describe('App', () => {
       deployment_base_url: 'https://agentsmith.example.com',
       auth_config: {
         deployment_base_url: 'https://agentsmith.example.com',
+        api_base_url: API_BASE,
         issuer: 'https://agentsmith.example.com/realms/mbos',
         authorization_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/auth',
         token_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/token',
@@ -412,6 +494,7 @@ describe('App', () => {
       deployment_base_url: 'https://agentsmith.example.com',
       auth_config: {
         deployment_base_url: 'https://agentsmith.example.com',
+        api_base_url: API_BASE,
         issuer: 'https://agentsmith.example.com/realms/mbos',
         authorization_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/auth',
         token_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/token',
@@ -627,6 +710,7 @@ describe('App', () => {
       deployment_base_url: 'https://agentsmith.example.com',
       auth_config: {
         deployment_base_url: 'https://agentsmith.example.com',
+        api_base_url: API_BASE,
         issuer: 'https://agentsmith.example.com/realms/mbos',
         authorization_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/auth',
         token_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/token',
