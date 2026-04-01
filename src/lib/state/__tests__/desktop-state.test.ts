@@ -37,6 +37,7 @@ describe('desktop state', () => {
     const failed = markLibraryMountFailed(mounted, 'lib_1', 'spawn_failed');
     expect(failed.mount_states.lib_1?.state).toBe('failed');
     expect(failed.diagnostics.last_mount_error).toBe('spawn_failed');
+    expect(failed.active_library_ids).toEqual([]);
 
     const unmounted = markLibraryUnmounted(failed, 'lib_1');
     expect(unmounted.mount_states.lib_1).toEqual({

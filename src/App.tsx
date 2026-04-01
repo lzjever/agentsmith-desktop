@@ -16,7 +16,11 @@ import {
   savePkceContext,
 } from './lib/auth/token-store';
 import { normalizeDeploymentBaseUrl } from './lib/deployment/normalize';
-import { createFallbackDoctorService, type DesktopDoctorService } from './lib/doctor/service';
+import {
+  assertDesktopMountReady,
+  createFallbackDoctorService,
+  type DesktopDoctorService,
+} from './lib/doctor/service';
 import { createTauriDoctorService } from './lib/doctor/tauri-backend';
 import { fetchDesktopLibraries } from './lib/libraries/api';
 import { displayLibraryName, sortLibrariesNewestFirst } from './lib/libraries/sort';
@@ -225,6 +229,20 @@ export function App(props: {
     }
     setState((current) => activateLibrary(current, library.id));
     try {
+      const checks = state.diagnostics.checks.length > 0
+        ? state.diagnostics.checks
+        : await doctorService.runChecks();
+      setState((current) => ({
+        ...current,
+        diagnostics: {
+          ...current.diagnostics,
+          checks,
+        },
+      }));
+      assertDesktopMountReady({
+        checks,
+        platform,
+      });
       const access = await fetchDesktopMountAccess({
         deploymentBaseUrl: state.deployment_base_url,
         authSession: state.auth_session,
@@ -250,7 +268,7 @@ export function App(props: {
         cause instanceof Error ? cause.message : 'desktop_mount_failed',
       ));
     }
-  }, [mountService, platform, state.auth_session, state.deployment_base_url]);
+  }, [doctorService, mountService, platform, state.auth_session, state.deployment_base_url, state.diagnostics.checks]);
 
   const handleDeactivateLibrary = React.useCallback(async (libraryId: string) => {
     setState((current) => deactivateLibrary(current, libraryId));

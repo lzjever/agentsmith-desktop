@@ -33,6 +33,15 @@ fn mount_library(
     state: tauri::State<'_, MountRegistry>,
     request: MountLibraryRequest,
 ) -> Result<MountRecord, String> {
+    if let Some(existing) = state.entries.lock().get(&request.library_id) {
+        return Ok(MountRecord {
+            library_id: request.library_id,
+            state: MountLifecycleState::Active,
+            mount_target: Some(existing.mount_target.clone()),
+            last_error: None,
+        });
+    }
+
     let command_spec = build_mount_command(&request.spec);
     let mut command = Command::new(&command_spec.executable);
     command.args(&command_spec.args);

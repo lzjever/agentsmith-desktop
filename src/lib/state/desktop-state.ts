@@ -120,6 +120,7 @@ export function markLibraryMountFailed(
 ): DesktopState {
   return {
     ...state,
+    active_library_ids: state.active_library_ids.filter((value) => value !== libraryId),
     mount_states: {
       ...state.mount_states,
       [libraryId]: {

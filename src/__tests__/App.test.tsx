@@ -16,6 +16,10 @@ describe('App', () => {
     key: 'juicefs',
     status: 'ready' as const,
     detail: '/usr/bin/juicefs',
+  }, {
+    key: 'fuse',
+    status: 'ready' as const,
+    detail: '/usr/bin/fusermount3',
   }]): DesktopDoctorService {
     return {
       runChecks: vi.fn().mockResolvedValue(checks),
@@ -224,6 +228,95 @@ describe('App', () => {
       expect(screen.getByTestId('desktop__library-mount-state--lib_2')).toHaveTextContent('failed');
       expect(screen.getByTestId('desktop__diagnostics')).toHaveTextContent('desktop_mount_access_failed_404');
     });
+  });
+
+  it('blocks mount activation when doctor prerequisites are missing', async () => {
+    const mountService: DesktopMountService = {
+      activate: vi.fn().mockResolvedValue({
+        mountTarget: '/home/user/AgentSmith/ws_default/lib_2',
+      }),
+      deactivate: vi.fn().mockResolvedValue(undefined),
+      stopAll: vi.fn().mockResolvedValue(undefined),
+    };
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/api/v1/me/desktop/file-libraries')) {
+        return new Response(JSON.stringify({
+          items: [
+            {
+              id: 'lib_2',
+              workspace_id: 'ws_default',
+              project_id: 'proj_demo',
+              name: 'Design Assets',
+              status: 'ready',
+              created_at: '2026-04-01T12:00:00.000Z',
+            },
+          ],
+        }), { status: 200 });
+      }
+      throw new Error(`unexpected_fetch_${url}`);
+    });
+    window.localStorage.setItem('agentsmith-desktop:session', JSON.stringify({
+      deployment_base_url: 'https://agentsmith.example.com',
+      auth_config: {
+        deployment_base_url: 'https://agentsmith.example.com',
+        issuer: 'https://agentsmith.example.com/realms/mbos',
+        authorization_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/auth',
+        token_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/token',
+        client_id: 'agentsmith-desktop',
+        scopes: ['openid', 'profile', 'email'],
+        response_type: 'code',
+        pkce_method: 'S256',
+        suggested_callback_origin: 'http://127.0.0.1',
+        suggested_callback_path: '/desktop/auth/callback',
+      },
+      auth_session: {
+        access_token: 'token_a',
+        refresh_token: 'refresh_a',
+        expires_at: 123,
+      },
+      signed_in_user: {
+        id: 'user_1',
+        email: 'user@example.com',
+        name: 'User Example',
+      },
+      libraries: [],
+      active_library_ids: [],
+      library_aliases: {},
+      mount_states: {},
+      diagnostics: {
+        last_mount_error: null,
+        checks: [],
+      },
+    }));
+
+    render(<App
+      mountService={mountService}
+      doctorService={createDoctorService([
+        {
+          key: 'juicefs',
+          status: 'ready',
+          detail: '/usr/bin/juicefs',
+        },
+        {
+          key: 'fuse',
+          status: 'missing',
+          detail: '/dev/fuse_missing',
+        },
+      ])}
+    />);
+
+    const user = userEvent.setup();
+    await screen.findByTestId('desktop__library--lib_2');
+    await user.click(screen.getByTestId('desktop__library-toggle--lib_2'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('desktop__library-mount-state--lib_2')).toHaveTextContent('failed');
+      expect(screen.getByTestId('desktop__diagnostics')).toHaveTextContent(
+        'desktop_mount_prerequisites_missing:fuse',
+      );
+    });
+    expect(mountService.activate).not.toHaveBeenCalled();
   });
 
   it('signs out and clears the signed-in user', async () => {
