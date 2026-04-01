@@ -67,6 +67,14 @@ export interface DesktopMountStatus {
   last_error: string | null;
 }
 
+export type DesktopDoctorCheckStatus = 'ready' | 'missing';
+
+export interface DesktopDoctorCheck {
+  key: string;
+  status: DesktopDoctorCheckStatus;
+  detail: string;
+}
+
 export interface DesktopState {
   deployment_base_url: string | null;
   auth_config: DesktopAuthConfig | null;
@@ -78,5 +86,6 @@ export interface DesktopState {
   mount_states: Record<string, DesktopMountStatus>;
   diagnostics: {
     last_mount_error: string | null;
+    checks: DesktopDoctorCheck[];
   };
 }

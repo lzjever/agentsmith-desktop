@@ -12,6 +12,7 @@ const BASE_STATE: DesktopState = {
   mount_states: {},
   diagnostics: {
     last_mount_error: null,
+    checks: [],
   },
 };
 

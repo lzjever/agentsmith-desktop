@@ -16,6 +16,8 @@ import {
   savePkceContext,
 } from './lib/auth/token-store';
 import { normalizeDeploymentBaseUrl } from './lib/deployment/normalize';
+import { createFallbackDoctorService, type DesktopDoctorService } from './lib/doctor/service';
+import { createTauriDoctorService } from './lib/doctor/tauri-backend';
 import { fetchDesktopLibraries } from './lib/libraries/api';
 import { displayLibraryName, sortLibrariesNewestFirst } from './lib/libraries/sort';
 import { fetchDesktopMountAccess } from './lib/mounts/api';
@@ -38,6 +40,7 @@ import { mergeDesktopLibraries } from './lib/state/session';
 
 export function App(props: {
   mountService?: DesktopMountService;
+  doctorService?: DesktopDoctorService;
 } = {}) {
   const [state, setState] = React.useState<DesktopState>(DEFAULT_DESKTOP_STATE);
   const [deploymentInput, setDeploymentInput] = React.useState('https://agentsmith.example.com');
@@ -52,6 +55,14 @@ export function App(props: {
         : createInMemoryMountBackend({ platform }),
     }),
     [platform, props.mountService],
+  );
+  const doctorService = React.useMemo(
+    () => props.doctorService ?? (
+      isTauriRuntimeAvailable()
+        ? createTauriDoctorService()
+        : createFallbackDoctorService()
+    ),
+    [props.doctorService],
   );
 
   React.useEffect(() => {
@@ -68,10 +79,43 @@ export function App(props: {
         mount_states: {},
         diagnostics: {
           last_mount_error: null,
+          checks: [],
         },
       });
     }
   }, []);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void doctorService.runChecks().then((checks) => {
+      if (cancelled) return;
+      setState((current) => ({
+        ...current,
+        diagnostics: {
+          ...current.diagnostics,
+          checks,
+        },
+      }));
+    }).catch((cause: unknown) => {
+      if (cancelled) return;
+      setState((current) => ({
+        ...current,
+        diagnostics: {
+          ...current.diagnostics,
+          checks: [
+            {
+              key: 'doctor',
+              status: 'missing',
+              detail: cause instanceof Error ? cause.message : 'desktop_doctor_failed',
+            },
+          ],
+        },
+      }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [doctorService]);
 
   React.useEffect(() => {
     const callback = parseDesktopAuthCallbackUrl(window.location.href);
@@ -281,6 +325,15 @@ export function App(props: {
         )}
         <div className="muted" data-testid="desktop__status">{status}</div>
         {error ? <div data-testid="desktop__error">{error}</div> : null}
+        <div className="doctor-list" data-testid="desktop__doctor">
+          {state.diagnostics.checks.map((check) => (
+            <div key={check.key} data-testid={`desktop__doctor-check--${check.key}`}>
+              <strong>{check.key}</strong>
+              <span className="muted">{check.status}</span>
+              <span className="muted">{check.detail}</span>
+            </div>
+          ))}
+        </div>
       </section>
 
       {state.signed_in_user ? (

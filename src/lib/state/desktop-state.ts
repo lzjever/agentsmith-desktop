@@ -11,6 +11,7 @@ export const DEFAULT_DESKTOP_STATE: DesktopState = {
   mount_states: {},
   diagnostics: {
     last_mount_error: null,
+    checks: [],
   },
 };
 
@@ -142,13 +143,13 @@ export function setLibraryAlias(state: DesktopState, libraryId: string, alias: s
       library_aliases: rest,
     };
   }
-    return {
-      ...state,
-      library_aliases: {
-        ...state.library_aliases,
+  return {
+    ...state,
+    library_aliases: {
+      ...state.library_aliases,
       [libraryId]: alias,
-      },
-    };
+    },
+  };
 }
 
 export function restoreActiveLibraries(state: DesktopState): string[] {

@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, env, path::Path};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MountLifecycleState {
@@ -66,6 +66,21 @@ pub struct JuicefsCommandSpec {
     pub env: BTreeMap<String, String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DoctorCheckStatus {
+    #[serde(rename = "ready")]
+    Ready,
+    #[serde(rename = "missing")]
+    Missing,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DoctorCheck {
+    pub key: String,
+    pub status: DoctorCheckStatus,
+    pub detail: String,
+}
+
 pub fn build_mount_command(spec: &MountSpec) -> JuicefsCommandSpec {
     let executable = match spec.platform {
         MountPlatform::Windows => "juicefs.exe".to_string(),
@@ -110,13 +125,103 @@ pub fn mark_mount_failed(record: &MountRecord, error: String) -> MountRecord {
     }
 }
 
+pub fn search_path_for_binary(path_env: &str, binary_names: &[&str]) -> Option<String> {
+    env::split_paths(path_env)
+        .flat_map(|dir| binary_names.iter().map(move |binary| dir.join(binary)))
+        .find(|candidate| candidate.exists())
+        .map(|candidate| candidate.display().to_string())
+}
+
+pub fn run_doctor_checks() -> Vec<DoctorCheck> {
+    let mut checks = Vec::new();
+    let juicefs_binary = env::var("PATH")
+        .ok()
+        .and_then(|path| {
+            search_path_for_binary(
+                &path,
+                if cfg!(target_os = "windows") {
+                    &["juicefs.exe"]
+                } else {
+                    &["juicefs"]
+                },
+            )
+        });
+    checks.push(DoctorCheck {
+        key: "juicefs".into(),
+        status: if juicefs_binary.is_some() {
+            DoctorCheckStatus::Ready
+        } else {
+            DoctorCheckStatus::Missing
+        },
+        detail: juicefs_binary.unwrap_or_else(|| "juicefs_binary_not_found".into()),
+    });
+
+    #[cfg(target_os = "linux")]
+    {
+        let fuse_device = Path::new("/dev/fuse");
+        let fuse_helper = env::var("PATH")
+            .ok()
+            .and_then(|path| search_path_for_binary(&path, &["fusermount3", "fusermount"]));
+        checks.push(DoctorCheck {
+            key: "fuse".into(),
+            status: if fuse_device.exists() && fuse_helper.is_some() {
+                DoctorCheckStatus::Ready
+            } else {
+                DoctorCheckStatus::Missing
+            },
+            detail: if !fuse_device.exists() {
+                "/dev/fuse_missing".into()
+            } else {
+                fuse_helper.unwrap_or_else(|| "fusermount_missing".into())
+            },
+        });
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let macfuse_root = Path::new("/Library/Filesystems/macfuse.fs");
+        checks.push(DoctorCheck {
+            key: "macfuse".into(),
+            status: if macfuse_root.exists() {
+                DoctorCheckStatus::Ready
+            } else {
+                DoctorCheckStatus::Missing
+            },
+            detail: macfuse_root.display().to_string(),
+        });
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let candidates = [
+            r"C:\Program Files\WinFsp\bin\winfsp-x64.dll",
+            r"C:\Program Files (x86)\WinFsp\bin\winfsp-x64.dll",
+        ];
+        let winfsp = candidates.iter().find(|candidate| Path::new(candidate).exists());
+        checks.push(DoctorCheck {
+            key: "winfsp".into(),
+            status: if winfsp.is_some() {
+                DoctorCheckStatus::Ready
+            } else {
+                DoctorCheckStatus::Missing
+            },
+            detail: winfsp
+                .map(|candidate| (*candidate).to_string())
+                .unwrap_or_else(|| "winfsp_not_found".into()),
+        });
+    }
+
+    checks
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
 
     use super::{
-        build_mount_command, mark_mount_active, mark_mount_failed, restore_mounts, stop_all_mounts,
-        JuicefsCommandSpec, MountLifecycleState, MountPlatform, MountRecord, MountSpec,
+        build_mount_command, mark_mount_active, mark_mount_failed, restore_mounts, run_doctor_checks,
+        search_path_for_binary, stop_all_mounts, DoctorCheckStatus, JuicefsCommandSpec,
+        MountLifecycleState, MountPlatform, MountRecord, MountSpec,
     };
 
     #[test]
@@ -205,5 +310,23 @@ mod tests {
         let failed = mark_mount_failed(&active, "spawn_failed".into());
         assert_eq!(failed.state, MountLifecycleState::Failed);
         assert_eq!(failed.last_error.as_deref(), Some("spawn_failed"));
+    }
+
+    #[test]
+    fn searches_path_for_binary() {
+        let path = "/tmp:/usr/bin:/bin";
+        let found = search_path_for_binary(path, &["sh"]);
+        assert!(found.is_some());
+    }
+
+    #[test]
+    fn doctor_checks_include_juicefs_result() {
+        let checks = run_doctor_checks();
+        let juicefs = checks.iter().find(|check| check.key == "juicefs");
+        assert!(juicefs.is_some());
+        assert!(matches!(
+            juicefs.unwrap().status,
+            DoctorCheckStatus::Ready | DoctorCheckStatus::Missing
+        ));
     }
 }

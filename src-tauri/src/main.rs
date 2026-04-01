@@ -1,8 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use agentsmith_desktop_core::{
-    build_mount_command, mark_mount_active, mark_mount_failed, MountLifecycleState, MountRecord,
-    MountSpec,
+    build_mount_command, mark_mount_active, mark_mount_failed, run_doctor_checks as core_run_doctor_checks,
+    DoctorCheck, MountLifecycleState, MountRecord, MountSpec,
 };
 use parking_lot::Mutex;
 use std::{
@@ -121,13 +121,19 @@ fn stop_all_mounts(state: tauri::State<'_, MountRegistry>) -> Result<Vec<MountRe
     Ok(stopped)
 }
 
+#[tauri::command]
+fn run_doctor_checks() -> Result<Vec<DoctorCheck>, String> {
+    Ok(core_run_doctor_checks())
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(MountRegistry::default())
         .invoke_handler(tauri::generate_handler![
             mount_library,
             unmount_library,
-            stop_all_mounts
+            stop_all_mounts,
+            run_doctor_checks
         ])
         .run(tauri::generate_context!())
         .expect("failed to run AgentSmith Desktop");

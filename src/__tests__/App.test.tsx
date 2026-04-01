@@ -1,7 +1,9 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from '../App';
+import type { DesktopDoctorService } from '../lib/doctor/service';
 import type { DesktopMountService } from '../lib/mounts/service';
+import type { DesktopDoctorCheck } from '../types';
 
 describe('App', () => {
   beforeEach(() => {
@@ -9,6 +11,16 @@ describe('App', () => {
     window.sessionStorage.clear();
     vi.restoreAllMocks();
   });
+
+  function createDoctorService(checks: DesktopDoctorCheck[] = [{
+    key: 'juicefs',
+    status: 'ready' as const,
+    detail: '/usr/bin/juicefs',
+  }]): DesktopDoctorService {
+    return {
+      runChecks: vi.fn().mockResolvedValue(checks),
+    };
+  }
 
   it('connects to a deployment and shows sign-in state', async () => {
     const user = userEvent.setup();
@@ -25,7 +37,7 @@ describe('App', () => {
       suggested_callback_path: '/desktop/auth/callback',
     }), { status: 200 }));
 
-    render(<App />);
+    render(<App doctorService={createDoctorService()} />);
     await user.click(screen.getByTestId('desktop__connect-submit'));
 
     await waitFor(() => {
@@ -116,10 +128,11 @@ describe('App', () => {
       mount_states: {},
       diagnostics: {
         last_mount_error: null,
+        checks: [],
       },
     }));
 
-    render(<App mountService={mountService} />);
+    render(<App mountService={mountService} doctorService={createDoctorService()} />);
     const user = userEvent.setup();
     expect(screen.getByTestId('desktop__deployment-url')).toHaveTextContent('https://agentsmith.example.com');
     expect(screen.getByTestId('desktop__signed-in-user')).toHaveTextContent('user@example.com');
@@ -198,10 +211,11 @@ describe('App', () => {
       mount_states: {},
       diagnostics: {
         last_mount_error: null,
+        checks: [],
       },
     }));
 
-    render(<App />);
+    render(<App doctorService={createDoctorService()} />);
     const user = userEvent.setup();
     await screen.findByTestId('desktop__library--lib_2');
     await user.click(screen.getByTestId('desktop__library-toggle--lib_2'));
@@ -243,10 +257,11 @@ describe('App', () => {
       mount_states: {},
       diagnostics: {
         last_mount_error: null,
+        checks: [],
       },
     }));
     const user = userEvent.setup();
-    render(<App />);
+    render(<App doctorService={createDoctorService()} />);
     await user.click(screen.getByTestId('desktop__sign-out'));
     expect(screen.getByTestId('desktop__signed-in-user')).toHaveTextContent('Not signed in');
     expect(window.localStorage.getItem('agentsmith-desktop:session')).toBeNull();
@@ -325,10 +340,11 @@ describe('App', () => {
       mount_states: {},
       diagnostics: {
         last_mount_error: null,
+        checks: [],
       },
     }));
 
-    render(<App mountService={mountService} />);
+    render(<App mountService={mountService} doctorService={createDoctorService()} />);
     await waitFor(() => {
       expect(mountService.activate).toHaveBeenCalledWith(expect.objectContaining({
         libraryId: 'lib_2',
@@ -346,11 +362,30 @@ describe('App', () => {
       stopAll: vi.fn().mockResolvedValue(undefined),
     };
 
-    render(<App mountService={mountService} />);
+    render(<App mountService={mountService} doctorService={createDoctorService()} />);
     window.dispatchEvent(new Event('beforeunload'));
 
     await waitFor(() => {
       expect(mountService.stopAll).toHaveBeenCalled();
     });
+  });
+
+  it('renders doctor checks from the configured doctor service', async () => {
+    render(<App doctorService={createDoctorService([
+      {
+        key: 'juicefs',
+        status: 'ready',
+        detail: '/usr/bin/juicefs',
+      },
+      {
+        key: 'fuse',
+        status: 'missing',
+        detail: '/dev/fuse_missing',
+      },
+    ])} />);
+
+    expect(await screen.findByTestId('desktop__doctor')).toBeInTheDocument();
+    expect(screen.getByTestId('desktop__doctor-check--juicefs')).toHaveTextContent('ready');
+    expect(screen.getByTestId('desktop__doctor-check--fuse')).toHaveTextContent('missing');
   });
 });
