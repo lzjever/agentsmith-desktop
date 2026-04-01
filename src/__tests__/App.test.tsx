@@ -541,4 +541,29 @@ describe('App', () => {
     });
     expect(doctorService.runChecks).toHaveBeenCalledTimes(2);
   });
+
+  it('opens the doctor setup guide for missing prerequisites', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    render(<App doctorService={createDoctorService([
+      {
+        key: 'juicefs',
+        status: 'ready',
+        detail: '/usr/bin/juicefs',
+      },
+      {
+        key: 'fuse',
+        status: 'missing',
+        detail: '/dev/fuse_missing',
+      },
+    ])} />);
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId('desktop__doctor-action--fuse'));
+
+    expect(openSpy).toHaveBeenCalledWith(
+      'https://juicefs.com/docs/community/getting-started/installation/',
+      '_blank',
+      'noopener,noreferrer',
+    );
+  });
 });

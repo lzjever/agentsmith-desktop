@@ -2,6 +2,7 @@ import {
   assertDesktopMountReady,
   createFallbackDoctorService,
   getDesktopDoctorGuidance,
+  getDesktopDoctorGuidanceActions,
   getMissingDesktopMountPrerequisites,
 } from '../service';
 
@@ -78,5 +79,21 @@ describe('desktop doctor mount prerequisites', () => {
         { key: 'macfuse', status: 'ready', detail: 'macFUSE 4.x' },
       ],
     })).toEqual([]);
+  });
+
+  it('returns action metadata for missing platform prerequisites', () => {
+    expect(getDesktopDoctorGuidanceActions({
+      platform: 'windows',
+      checks: [
+        { key: 'juicefs', status: 'ready', detail: 'C:\\juicefs.exe' },
+      ],
+    })).toEqual([
+      {
+        key: 'winfsp',
+        message: 'Install WinFsp on this machine, then refresh diagnostics before mounting libraries.',
+        url: 'https://winfsp.dev/rel/',
+        label: 'Open setup guide',
+      },
+    ]);
   });
 });

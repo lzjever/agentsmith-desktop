@@ -5,6 +5,13 @@ export interface DesktopDoctorService {
   runChecks(): Promise<DesktopDoctorCheck[]>;
 }
 
+export interface DesktopDoctorGuidanceAction {
+  key: string;
+  message: string;
+  url: string;
+  label: string;
+}
+
 const REQUIRED_KEYS_BY_PLATFORM: Record<DesktopPlatform, string[]> = {
   linux: ['juicefs', 'fuse'],
   macos: ['juicefs', 'macfuse'],
@@ -16,6 +23,13 @@ const GUIDANCE_BY_KEY: Record<string, string> = {
   fuse: 'Install FUSE support on this machine, then refresh diagnostics before mounting libraries.',
   macfuse: 'Install macFUSE on this machine, then refresh diagnostics before mounting libraries.',
   winfsp: 'Install WinFsp on this machine, then refresh diagnostics before mounting libraries.',
+};
+
+const GUIDANCE_URL_BY_KEY: Record<string, string> = {
+  juicefs: 'https://juicefs.com/docs/community/getting-started/installation/',
+  fuse: 'https://juicefs.com/docs/community/getting-started/installation/',
+  macfuse: 'https://macfuse.github.io/',
+  winfsp: 'https://winfsp.dev/rel/',
 };
 
 export function createFallbackDoctorService(): DesktopDoctorService {
@@ -60,4 +74,16 @@ export function getDesktopDoctorGuidance(args: {
 }): string[] {
   return getMissingDesktopMountPrerequisites(args)
     .map((key) => GUIDANCE_BY_KEY[key] ?? `Install or configure ${key}, then refresh diagnostics before mounting libraries.`);
+}
+
+export function getDesktopDoctorGuidanceActions(args: {
+  checks: DesktopDoctorCheck[];
+  platform: DesktopPlatform;
+}): DesktopDoctorGuidanceAction[] {
+  return getMissingDesktopMountPrerequisites(args).map((key) => ({
+    key,
+    message: GUIDANCE_BY_KEY[key] ?? `Install or configure ${key}, then refresh diagnostics before mounting libraries.`,
+    url: GUIDANCE_URL_BY_KEY[key] ?? 'https://juicefs.com/docs/community/getting-started/installation/',
+    label: 'Open setup guide',
+  }));
 }

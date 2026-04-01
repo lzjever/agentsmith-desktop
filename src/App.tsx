@@ -20,6 +20,7 @@ import {
   assertDesktopMountReady,
   createFallbackDoctorService,
   getDesktopDoctorGuidance,
+  getDesktopDoctorGuidanceActions,
   type DesktopDoctorService,
 } from './lib/doctor/service';
 import { createTauriDoctorService } from './lib/doctor/tauri-backend';
@@ -154,6 +155,10 @@ export function App(props: {
   }, [doctorService]);
 
   const doctorGuidance = React.useMemo(() => getDesktopDoctorGuidance({
+    checks: state.diagnostics.checks,
+    platform,
+  }), [platform, state.diagnostics.checks]);
+  const doctorGuidanceActions = React.useMemo(() => getDesktopDoctorGuidanceActions({
     checks: state.diagnostics.checks,
     platform,
   }), [platform, state.diagnostics.checks]);
@@ -393,8 +398,17 @@ export function App(props: {
           ))}
           {doctorGuidance.length > 0 ? (
             <div data-testid="desktop__doctor-guidance">
-              {doctorGuidance.map((message) => (
-                <div key={message} className="muted">{message}</div>
+              {doctorGuidanceActions.map((guidance) => (
+                <div key={guidance.key} className="muted">
+                  <div>{guidance.message}</div>
+                  <button
+                    type="button"
+                    data-testid={`desktop__doctor-action--${guidance.key}`}
+                    onClick={() => window.open(guidance.url, '_blank', 'noopener,noreferrer')}
+                  >
+                    {guidance.label}
+                  </button>
+                </div>
               ))}
             </div>
           ) : null}
