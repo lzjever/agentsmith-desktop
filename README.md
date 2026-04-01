@@ -12,3 +12,9 @@ V1 scope:
 - Unmount when the app exits
 
 See [docs/prd.md](docs/prd.md) for the product definition and the draft implementation docs under [docs/](docs/).
+
+For internal pilot delivery and release operations, start with:
+
+- [docs/internal-pilot-runbook.md](docs/internal-pilot-runbook.md)
+- [docs/platform-prerequisites.md](docs/platform-prerequisites.md)
+- [docs/release-checklist.md](docs/release-checklist.md)
