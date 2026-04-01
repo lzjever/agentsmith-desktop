@@ -1,6 +1,9 @@
 export interface DesktopLibrary {
   id: string;
   name: string;
+  workspace_id?: string;
+  project_id?: string;
+  status?: string;
   created_at: string;
   alias?: string | null;
 }
@@ -42,6 +45,7 @@ export interface DesktopState {
   auth_config: DesktopAuthConfig | null;
   auth_session: DesktopAuthSession | null;
   signed_in_user: SignedInUser | null;
+  libraries: DesktopLibrary[];
   active_library_ids: string[];
   library_aliases: Record<string, string>;
 }

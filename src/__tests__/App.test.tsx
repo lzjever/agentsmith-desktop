@@ -35,6 +35,26 @@ describe('App', () => {
   });
 
   it('restores a signed-in session from local storage and toggles activation', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      items: [
+        {
+          id: 'lib_1',
+          workspace_id: 'ws_default',
+          project_id: 'proj_demo',
+          name: 'Shared Docs',
+          status: 'ready',
+          created_at: '2026-04-01T10:00:00.000Z',
+        },
+        {
+          id: 'lib_2',
+          workspace_id: 'ws_default',
+          project_id: 'proj_demo',
+          name: 'Design Assets',
+          status: 'ready',
+          created_at: '2026-04-01T12:00:00.000Z',
+        },
+      ],
+    }), { status: 200 }));
     window.localStorage.setItem('agentsmith-desktop:session', JSON.stringify({
       deployment_base_url: 'https://agentsmith.example.com',
       auth_config: {
@@ -67,10 +87,13 @@ describe('App', () => {
     const user = userEvent.setup();
     expect(screen.getByTestId('desktop__deployment-url')).toHaveTextContent('https://agentsmith.example.com');
     expect(screen.getByTestId('desktop__signed-in-user')).toHaveTextContent('user@example.com');
-    const libraries = screen.getAllByTestId(/desktop__library--/);
+    const libraries = await screen.findAllByTestId(/desktop__library--/);
     expect(libraries[0]).toHaveTextContent('Design Assets');
     await user.click(screen.getByTestId('desktop__library-toggle--lib_2'));
     expect(screen.getByTestId('desktop__library-toggle--lib_2')).toHaveTextContent('Deactivate');
+    const aliasInput = screen.getByTestId('desktop__library-alias--lib_2');
+    await user.type(aliasInput, 'Work Files');
+    expect(aliasInput).toHaveValue('Work Files');
   });
 
   it('signs out and clears the signed-in user', async () => {

@@ -41,6 +41,7 @@ const COMPLETE_STATE: DesktopState = {
     email: 'user@example.com',
     name: 'User Example',
   },
+  libraries: [],
   active_library_ids: ['lib_1'],
   library_aliases: {
     lib_1: 'Work Files',

@@ -16,6 +16,7 @@ import {
   savePkceContext,
 } from './lib/auth/token-store';
 import { normalizeDeploymentBaseUrl } from './lib/deployment/normalize';
+import { fetchDesktopLibraries } from './lib/libraries/api';
 import { displayLibraryName, sortLibrariesNewestFirst } from './lib/libraries/sort';
 import {
   DEFAULT_DESKTOP_STATE,
@@ -23,13 +24,10 @@ import {
   completeDesktopSignIn,
   connectDeployment,
   deactivateLibrary,
+  setLibraryAlias,
   signOutDesktop,
 } from './lib/state/desktop-state';
-
-const DEMO_LIBRARIES: DesktopLibrary[] = sortLibrariesNewestFirst([
-  { id: 'lib_1', name: 'Shared Docs', created_at: '2026-04-01T10:00:00.000Z' },
-  { id: 'lib_2', name: 'Design Assets', created_at: '2026-04-01T12:00:00.000Z' },
-]);
+import { mergeDesktopLibraries } from './lib/state/session';
 
 export function App() {
   const [state, setState] = React.useState<DesktopState>(DEFAULT_DESKTOP_STATE);
@@ -45,6 +43,7 @@ export function App() {
         auth_config: restored.auth_config,
         auth_session: restored.auth_session,
         signed_in_user: restored.signed_in_user,
+        libraries: [],
         active_library_ids: restored.active_library_ids,
         library_aliases: restored.library_aliases,
       });
@@ -83,6 +82,26 @@ export function App() {
       setError(cause instanceof Error ? cause.message : 'desktop_login_failed');
     });
   }, [state.auth_config]);
+
+  React.useEffect(() => {
+    if (!state.auth_session || !state.deployment_base_url) {
+      return;
+    }
+    let cancelled = false;
+    void fetchDesktopLibraries({
+      deploymentBaseUrl: state.deployment_base_url,
+      authSession: state.auth_session,
+    }).then((libraries) => {
+      if (cancelled) return;
+      setState((current) => mergeDesktopLibraries(current, libraries));
+    }).catch((cause: unknown) => {
+      if (cancelled) return;
+      setError(cause instanceof Error ? cause.message : 'desktop_libraries_failed');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [state.auth_session, state.deployment_base_url]);
 
   const handleConnect = React.useCallback(async () => {
     try {
@@ -169,13 +188,23 @@ export function App() {
         <section className="panel" data-testid="desktop__libraries">
           <h2>Libraries</h2>
           <div className="library-list">
-            {DEMO_LIBRARIES.map((library) => {
+            {state.libraries.map((library) => {
               const active = state.active_library_ids.includes(library.id);
               return (
                 <div className="library-item" key={library.id} data-testid={`desktop__library--${library.id}`}>
                   <div className="library-meta">
                     <strong>{displayLibraryName({ ...library, alias: state.library_aliases[library.id] ?? null })}</strong>
                     <span className="muted">{library.created_at}</span>
+                    <input
+                      type="text"
+                      value={state.library_aliases[library.id] ?? ''}
+                      onChange={(event) => {
+                        const nextAlias = event.currentTarget.value;
+                        setState((current) => setLibraryAlias(current, library.id, nextAlias));
+                      }}
+                      placeholder="Local alias"
+                      data-testid={`desktop__library-alias--${library.id}`}
+                    />
                   </div>
                   <button
                     type="button"
