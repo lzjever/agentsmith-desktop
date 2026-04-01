@@ -35,26 +35,49 @@ describe('App', () => {
   });
 
   it('restores a signed-in session from local storage and toggles activation', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
-      items: [
-        {
-          id: 'lib_1',
-          workspace_id: 'ws_default',
-          project_id: 'proj_demo',
-          name: 'Shared Docs',
-          status: 'ready',
-          created_at: '2026-04-01T10:00:00.000Z',
-        },
-        {
-          id: 'lib_2',
-          workspace_id: 'ws_default',
-          project_id: 'proj_demo',
-          name: 'Design Assets',
-          status: 'ready',
-          created_at: '2026-04-01T12:00:00.000Z',
-        },
-      ],
-    }), { status: 200 }));
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/api/v1/me/desktop/file-libraries')) {
+        return new Response(JSON.stringify({
+          items: [
+            {
+              id: 'lib_1',
+              workspace_id: 'ws_default',
+              project_id: 'proj_demo',
+              name: 'Shared Docs',
+              status: 'ready',
+              created_at: '2026-04-01T10:00:00.000Z',
+            },
+            {
+              id: 'lib_2',
+              workspace_id: 'ws_default',
+              project_id: 'proj_demo',
+              name: 'Design Assets',
+              status: 'ready',
+              created_at: '2026-04-01T12:00:00.000Z',
+            },
+          ],
+        }), { status: 200 });
+      }
+      if (url.endsWith('/api/v1/workspaces/ws_default/projects/proj_demo/file-libraries/lib_2/desktop-mount-access')) {
+        return new Response(JSON.stringify({
+          desktop_mount_access: {
+            filesystem_name: 'fs_demo',
+            metadata_url: 'postgres://demo',
+            storage_bucket_url: 'http://minio.example/fs_demo',
+            deployment_base_url: 'https://agentsmith.example.com',
+            default_mount_roots: {
+              linux: '/home/user/AgentSmith',
+              macos: '/Users/user/AgentSmith',
+              windows: 'X:',
+            },
+            windows_requires_drive_letter: true,
+            created_at: '2026-04-01T12:30:00.000Z',
+          },
+        }), { status: 200 });
+      }
+      throw new Error(`unexpected_fetch_${url}`);
+    });
     window.localStorage.setItem('agentsmith-desktop:session', JSON.stringify({
       deployment_base_url: 'https://agentsmith.example.com',
       auth_config: {
@@ -95,12 +118,80 @@ describe('App', () => {
     const libraries = await screen.findAllByTestId(/desktop__library--/);
     expect(libraries[0]).toHaveTextContent('Design Assets');
     await user.click(screen.getByTestId('desktop__library-toggle--lib_2'));
-    expect(screen.getByTestId('desktop__library-toggle--lib_2')).toHaveTextContent('Deactivate');
-    expect(screen.getByTestId('desktop__library-mount-state--lib_2')).toHaveTextContent('active');
-    expect(screen.getByTestId('desktop__library-mount-target--lib_2')).toHaveTextContent('/AgentSmith/ws_default/lib_2');
+    await waitFor(() => {
+      expect(screen.getByTestId('desktop__library-toggle--lib_2')).toHaveTextContent('Deactivate');
+      expect(screen.getByTestId('desktop__library-mount-state--lib_2')).toHaveTextContent('active');
+      expect(screen.getByTestId('desktop__library-mount-target--lib_2')).toHaveTextContent('/home/user/AgentSmith/ws_default/lib_2');
+    });
     const aliasInput = screen.getByTestId('desktop__library-alias--lib_2');
     await user.type(aliasInput, 'Work Files');
     expect(aliasInput).toHaveValue('Work Files');
+  });
+
+  it('shows a failed mount state when desktop mount access exchange fails', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/api/v1/me/desktop/file-libraries')) {
+        return new Response(JSON.stringify({
+          items: [
+            {
+              id: 'lib_2',
+              workspace_id: 'ws_default',
+              project_id: 'proj_demo',
+              name: 'Design Assets',
+              status: 'ready',
+              created_at: '2026-04-01T12:00:00.000Z',
+            },
+          ],
+        }), { status: 200 });
+      }
+      if (url.endsWith('/api/v1/workspaces/ws_default/projects/proj_demo/file-libraries/lib_2/desktop-mount-access')) {
+        return new Response('{}', { status: 404 });
+      }
+      throw new Error(`unexpected_fetch_${url}`);
+    });
+    window.localStorage.setItem('agentsmith-desktop:session', JSON.stringify({
+      deployment_base_url: 'https://agentsmith.example.com',
+      auth_config: {
+        deployment_base_url: 'https://agentsmith.example.com',
+        issuer: 'https://agentsmith.example.com/realms/mbos',
+        authorization_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/auth',
+        token_endpoint: 'https://agentsmith.example.com/realms/mbos/protocol/openid-connect/token',
+        client_id: 'agentsmith-desktop',
+        scopes: ['openid', 'profile', 'email'],
+        response_type: 'code',
+        pkce_method: 'S256',
+        suggested_callback_origin: 'http://127.0.0.1',
+        suggested_callback_path: '/desktop/auth/callback',
+      },
+      auth_session: {
+        access_token: 'token_a',
+        refresh_token: 'refresh_a',
+        expires_at: 123,
+      },
+      signed_in_user: {
+        id: 'user_1',
+        email: 'user@example.com',
+        name: 'User Example',
+      },
+      libraries: [],
+      active_library_ids: [],
+      library_aliases: {},
+      mount_states: {},
+      diagnostics: {
+        last_mount_error: null,
+      },
+    }));
+
+    render(<App />);
+    const user = userEvent.setup();
+    await screen.findByTestId('desktop__library--lib_2');
+    await user.click(screen.getByTestId('desktop__library-toggle--lib_2'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('desktop__library-mount-state--lib_2')).toHaveTextContent('failed');
+      expect(screen.getByTestId('desktop__diagnostics')).toHaveTextContent('desktop_mount_access_failed_404');
+    });
   });
 
   it('signs out and clears the signed-in user', async () => {

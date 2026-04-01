@@ -8,6 +8,20 @@ export interface DesktopLibrary {
   alias?: string | null;
 }
 
+export interface FileLibraryDesktopMountAccess {
+  filesystem_name: string;
+  metadata_url: string;
+  storage_bucket_url?: string;
+  deployment_base_url: string;
+  default_mount_roots: {
+    linux: string;
+    macos: string;
+    windows: string;
+  };
+  windows_requires_drive_letter: boolean;
+  created_at: string;
+}
+
 export interface SignedInUser {
   id: string;
   email: string;

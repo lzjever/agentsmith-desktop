@@ -18,6 +18,8 @@ import {
 import { normalizeDeploymentBaseUrl } from './lib/deployment/normalize';
 import { fetchDesktopLibraries } from './lib/libraries/api';
 import { displayLibraryName, sortLibrariesNewestFirst } from './lib/libraries/sort';
+import { fetchDesktopMountAccess } from './lib/mounts/api';
+import { buildDesktopMountTarget, detectDesktopPlatform } from './lib/mounts/paths';
 import {
   DEFAULT_DESKTOP_STATE,
   activateLibrary,
@@ -25,6 +27,7 @@ import {
   connectDeployment,
   deactivateLibrary,
   markLibraryMounted,
+  markLibraryMountFailed,
   setLibraryAlias,
   signOutDesktop,
 } from './lib/state/desktop-state';
@@ -156,6 +159,35 @@ export function App() {
     }
   }, [state]);
 
+  const handleActivateLibrary = React.useCallback(async (library: DesktopLibrary) => {
+    if (!state.auth_session || !state.deployment_base_url || !library.workspace_id || !library.project_id) {
+      setState((current) => markLibraryMountFailed(current, library.id, 'desktop_library_mount_context_missing'));
+      return;
+    }
+    setState((current) => activateLibrary(current, library.id));
+    try {
+      const access = await fetchDesktopMountAccess({
+        deploymentBaseUrl: state.deployment_base_url,
+        authSession: state.auth_session,
+        workspaceId: library.workspace_id,
+        projectId: library.project_id,
+        libraryId: library.id,
+      });
+      const mountTarget = buildDesktopMountTarget({
+        platform: detectDesktopPlatform(),
+        access,
+        library,
+      });
+      setState((current) => markLibraryMounted(current, library.id, mountTarget));
+    } catch (cause) {
+      setState((current) => markLibraryMountFailed(
+        current,
+        library.id,
+        cause instanceof Error ? cause.message : 'desktop_mount_failed',
+      ));
+    }
+  }, [state.auth_session, state.deployment_base_url]);
+
   return (
     <main className="app-shell">
       <section className="panel" data-testid="desktop__session">
@@ -219,16 +251,13 @@ export function App() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setState((current) => {
+                    onClick={() => {
                       if (active) {
-                        return deactivateLibrary(current, library.id);
+                        setState((current) => deactivateLibrary(current, library.id));
+                        return;
                       }
-                      return markLibraryMounted(
-                        activateLibrary(current, library.id),
-                        library.id,
-                        `/AgentSmith/${library.workspace_id ?? 'workspace'}/${library.id}`,
-                      );
-                    })}
+                      void handleActivateLibrary(library);
+                    }}
                     data-testid={`desktop__library-toggle--${library.id}`}
                   >
                     {active ? 'Deactivate' : 'Activate'}
