@@ -95,4 +95,29 @@ describe('createDesktopMountService', () => {
 
     expect(backend.openPath).toHaveBeenCalledWith('/home/user/AgentSmith/ws_default/lib_demo');
   });
+
+  it('passes the resolved non-windows mount target to the backend activation input', async () => {
+    const backend: DesktopMountBackend = {
+      activate: vi.fn().mockResolvedValue({
+        mountTarget: '/home/user/AgentSmith/ws_default/lib_demo',
+      }),
+      deactivate: vi.fn().mockResolvedValue(undefined),
+      stopAll: vi.fn().mockResolvedValue(undefined),
+      openPath: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = createDesktopMountService({
+      platform: 'linux',
+      backend,
+    });
+
+    await service.activate({
+      libraryId: 'lib_demo',
+      workspaceId: 'ws_default',
+      access: ACCESS,
+    });
+
+    expect(backend.activate).toHaveBeenCalledWith(expect.objectContaining({
+      mountTarget: '/home/user/AgentSmith/ws_default/lib_demo',
+    }));
+  });
 });

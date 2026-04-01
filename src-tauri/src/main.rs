@@ -12,8 +12,10 @@ use parking_lot::Mutex;
 use std::{
     collections::HashMap,
     io::ErrorKind,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
+    thread,
+    time::Duration,
 };
 use tauri::Manager;
 
@@ -42,6 +44,80 @@ struct DoctorHandoffRequest {
     #[serde(alias = "installerKey")]
     installer_key: Option<String>,
     url: String,
+}
+
+fn prepare_mount_target(spec: &MountSpec) -> Result<(), String> {
+    if matches!(spec.platform, agentsmith_desktop_core::MountPlatform::Windows) {
+        return Ok(());
+    }
+
+    std::fs::create_dir_all(&spec.mount_target)
+        .map_err(|error| format!("desktop_mount_target_prepare_failed:{error}"))
+}
+
+fn read_child_stderr(child: &mut Child) -> String {
+    let mut stderr_output = String::new();
+    if let Some(mut stderr) = child.stderr.take() {
+        let _ = std::io::Read::read_to_string(&mut stderr, &mut stderr_output);
+    }
+    stderr_output.trim().to_string()
+}
+
+fn is_mount_ready(spec: &MountSpec) -> Result<bool, String> {
+    match spec.platform {
+        agentsmith_desktop_core::MountPlatform::Linux => {
+            let status = Command::new("mountpoint")
+                .args(["-q", &spec.mount_target])
+                .status()
+                .map_err(|error| format!("desktop_mount_probe_failed:{error}"))?;
+            Ok(status.success())
+        }
+        agentsmith_desktop_core::MountPlatform::Macos => {
+            let output = Command::new("mount")
+                .output()
+                .map_err(|error| format!("desktop_mount_probe_failed:{error}"))?;
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            Ok(stdout.contains(&format!(" on {} ", spec.mount_target)))
+        }
+        agentsmith_desktop_core::MountPlatform::Windows => Ok(Path::new(&spec.mount_target).exists()),
+    }
+}
+
+fn wait_for_mount_ready(child: &mut Child, spec: &MountSpec) -> Result<(), String> {
+    const ATTEMPTS: usize = 40;
+    const SLEEP_MS: u64 = 100;
+
+    for _ in 0..ATTEMPTS {
+        if is_mount_ready(spec)? {
+            return Ok(());
+        }
+
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let stderr = read_child_stderr(child);
+                return Err(if stderr.is_empty() {
+                    format!("desktop_mount_not_ready:process_exited:{status}")
+                } else {
+                    format!("desktop_mount_not_ready:{stderr}")
+                });
+            }
+            Ok(None) => {
+                thread::sleep(Duration::from_millis(SLEEP_MS));
+            }
+            Err(error) => {
+                return Err(format!("desktop_mount_probe_failed:{error}"));
+            }
+        }
+    }
+
+    let _ = child.kill();
+    let _ = child.wait();
+    let stderr = read_child_stderr(child);
+    Err(if stderr.is_empty() {
+        "desktop_mount_not_ready:timeout".into()
+    } else {
+        format!("desktop_mount_not_ready:{stderr}")
+    })
 }
 
 fn stop_child_process(child: &mut Child) -> Result<(), String> {
@@ -99,6 +175,8 @@ fn mount_library(
         entries.remove(&request.library_id);
     }
 
+    prepare_mount_target(&request.spec)?;
+
     let executable = resolve_juicefs_executable(&request.spec.platform)?;
     let command_spec = build_mount_command_with_executable(executable, &request.spec);
     let mut command = Command::new(&command_spec.executable);
@@ -108,12 +186,14 @@ fn mount_library(
     command.stdout(Stdio::null());
     command.stderr(Stdio::piped());
 
-    let child = command
+    let mut child = command
         .spawn()
         .map_err(|error| match error.kind() {
             ErrorKind::NotFound => format!("desktop_mount_binary_missing:{}", command_spec.executable),
             _ => format!("desktop_mount_spawn_failed:{error}"),
         })?;
+
+    wait_for_mount_ready(&mut child, &request.spec)?;
 
     let record = mark_mount_active(
         &MountRecord {
