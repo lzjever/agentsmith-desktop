@@ -481,4 +481,64 @@ describe('App', () => {
     expect(screen.getByTestId('desktop__doctor-check--juicefs')).toHaveTextContent('ready');
     expect(screen.getByTestId('desktop__doctor-check--fuse')).toHaveTextContent('missing');
   });
+
+  it('shows doctor guidance for missing platform prerequisites', async () => {
+    render(<App doctorService={createDoctorService([
+      {
+        key: 'juicefs',
+        status: 'ready',
+        detail: '/usr/bin/juicefs',
+      },
+      {
+        key: 'fuse',
+        status: 'missing',
+        detail: '/dev/fuse_missing',
+      },
+    ])} />);
+
+    expect(await screen.findByTestId('desktop__doctor-guidance')).toHaveTextContent(
+      'Install FUSE support on this machine',
+    );
+  });
+
+  it('refreshes doctor diagnostics on demand', async () => {
+    const doctorService: DesktopDoctorService = {
+      runChecks: vi.fn()
+        .mockResolvedValueOnce([
+          {
+            key: 'juicefs',
+            status: 'ready',
+            detail: '/usr/bin/juicefs',
+          },
+          {
+            key: 'fuse',
+            status: 'missing',
+            detail: '/dev/fuse_missing',
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            key: 'juicefs',
+            status: 'ready',
+            detail: '/usr/bin/juicefs',
+          },
+          {
+            key: 'fuse',
+            status: 'ready',
+            detail: '/usr/bin/fusermount3',
+          },
+        ]),
+    };
+
+    render(<App doctorService={doctorService} />);
+    expect(await screen.findByTestId('desktop__doctor-check--fuse')).toHaveTextContent('missing');
+
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId('desktop__doctor-refresh'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('desktop__doctor-check--fuse')).toHaveTextContent('ready');
+    });
+    expect(doctorService.runChecks).toHaveBeenCalledTimes(2);
+  });
 });

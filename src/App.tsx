@@ -19,6 +19,7 @@ import { normalizeDeploymentBaseUrl } from './lib/deployment/normalize';
 import {
   assertDesktopMountReady,
   createFallbackDoctorService,
+  getDesktopDoctorGuidance,
   type DesktopDoctorService,
 } from './lib/doctor/service';
 import { createTauriDoctorService } from './lib/doctor/tauri-backend';
@@ -91,8 +92,43 @@ export function App(props: {
 
   React.useEffect(() => {
     let cancelled = false;
-    void doctorService.runChecks().then((checks) => {
-      if (cancelled) return;
+    const runDoctorChecks = async () => {
+      try {
+        const checks = await doctorService.runChecks();
+        if (cancelled) return;
+        setState((current) => ({
+          ...current,
+          diagnostics: {
+            ...current.diagnostics,
+            checks,
+          },
+        }));
+      } catch (cause: unknown) {
+        if (cancelled) return;
+        setState((current) => ({
+          ...current,
+          diagnostics: {
+            ...current.diagnostics,
+            checks: [
+              {
+                key: 'doctor',
+                status: 'missing',
+                detail: cause instanceof Error ? cause.message : 'desktop_doctor_failed',
+              },
+            ],
+          },
+        }));
+      }
+    };
+    void runDoctorChecks();
+    return () => {
+      cancelled = true;
+    };
+  }, [doctorService]);
+
+  const refreshDoctorChecks = React.useCallback(async () => {
+    try {
+      const checks = await doctorService.runChecks();
       setState((current) => ({
         ...current,
         diagnostics: {
@@ -100,8 +136,7 @@ export function App(props: {
           checks,
         },
       }));
-    }).catch((cause: unknown) => {
-      if (cancelled) return;
+    } catch (cause: unknown) {
       setState((current) => ({
         ...current,
         diagnostics: {
@@ -115,11 +150,13 @@ export function App(props: {
           ],
         },
       }));
-    });
-    return () => {
-      cancelled = true;
-    };
+    }
   }, [doctorService]);
+
+  const doctorGuidance = React.useMemo(() => getDesktopDoctorGuidance({
+    checks: state.diagnostics.checks,
+    platform,
+  }), [platform, state.diagnostics.checks]);
 
   React.useEffect(() => {
     const callback = parseDesktopAuthCallbackUrl(window.location.href);
@@ -344,6 +381,9 @@ export function App(props: {
         <div className="muted" data-testid="desktop__status">{status}</div>
         {error ? <div data-testid="desktop__error">{error}</div> : null}
         <div className="doctor-list" data-testid="desktop__doctor">
+          <button type="button" onClick={() => void refreshDoctorChecks()} data-testid="desktop__doctor-refresh">
+            Refresh diagnostics
+          </button>
           {state.diagnostics.checks.map((check) => (
             <div key={check.key} data-testid={`desktop__doctor-check--${check.key}`}>
               <strong>{check.key}</strong>
@@ -351,6 +391,13 @@ export function App(props: {
               <span className="muted">{check.detail}</span>
             </div>
           ))}
+          {doctorGuidance.length > 0 ? (
+            <div data-testid="desktop__doctor-guidance">
+              {doctorGuidance.map((message) => (
+                <div key={message} className="muted">{message}</div>
+              ))}
+            </div>
+          ) : null}
         </div>
       </section>
 

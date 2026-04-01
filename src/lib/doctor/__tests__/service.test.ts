@@ -1,6 +1,7 @@
 import {
   assertDesktopMountReady,
   createFallbackDoctorService,
+  getDesktopDoctorGuidance,
   getMissingDesktopMountPrerequisites,
 } from '../service';
 
@@ -45,5 +46,37 @@ describe('desktop doctor mount prerequisites', () => {
         { key: 'juicefs', status: 'ready', detail: 'C:\\juicefs.exe' },
       ],
     })).toThrow('desktop_mount_prerequisites_missing:winfsp');
+  });
+
+  it('returns linux guidance for missing fuse', () => {
+    expect(getDesktopDoctorGuidance({
+      platform: 'linux',
+      checks: [
+        { key: 'juicefs', status: 'ready', detail: '/usr/bin/juicefs' },
+      ],
+    })).toEqual([
+      'Install FUSE support on this machine, then refresh diagnostics before mounting libraries.',
+    ]);
+  });
+
+  it('returns windows guidance for missing winfsp', () => {
+    expect(getDesktopDoctorGuidance({
+      platform: 'windows',
+      checks: [
+        { key: 'juicefs', status: 'ready', detail: 'C:\\juicefs.exe' },
+      ],
+    })).toEqual([
+      'Install WinFsp on this machine, then refresh diagnostics before mounting libraries.',
+    ]);
+  });
+
+  it('returns no guidance when mount prerequisites are satisfied', () => {
+    expect(getDesktopDoctorGuidance({
+      platform: 'macos',
+      checks: [
+        { key: 'juicefs', status: 'ready', detail: '/Applications/AgentSmith Desktop/juicefs' },
+        { key: 'macfuse', status: 'ready', detail: 'macFUSE 4.x' },
+      ],
+    })).toEqual([]);
   });
 });
