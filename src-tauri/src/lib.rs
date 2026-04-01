@@ -91,15 +91,15 @@ pub struct DesktopAuthCallbackPayload {
 pub struct DesktopAuthConfig {
     pub deployment_base_url: String,
     pub api_base_url: Option<String>,
-    pub issuer: String,
-    pub authorization_endpoint: String,
-    pub token_endpoint: String,
-    pub client_id: String,
-    pub scopes: Vec<String>,
-    pub response_type: String,
-    pub pkce_method: String,
-    pub suggested_callback_origin: String,
-    pub suggested_callback_path: String,
+    pub issuer: Option<String>,
+    pub authorization_endpoint: Option<String>,
+    pub token_endpoint: Option<String>,
+    pub client_id: Option<String>,
+    pub scopes: Option<Vec<String>>,
+    pub response_type: Option<String>,
+    pub pkce_method: Option<String>,
+    pub suggested_callback_origin: Option<String>,
+    pub suggested_callback_path: Option<String>,
 }
 
 pub fn resolve_installer_target_from_inputs(
@@ -433,11 +433,12 @@ mod tests {
 
     use super::{
         build_mount_command, build_mount_command_with_executable, build_open_command_for_os,
-        listen_for_auth_callback, mark_mount_active, mark_mount_failed, parse_auth_callback_target,
-        resolve_installer_target_from_inputs, resolve_juicefs_executable_from_inputs, restore_mounts,
-        run_doctor_checks, search_path_for_binary, stop_all_mounts, DesktopAuthCallbackPayload,
-        DoctorCheckStatus, JuicefsCommandSpec, MountLifecycleState, MountPlatform, MountRecord,
-        MountSpec, OpenCommandSpec,
+        fetch_desktop_auth_config_from_base_url, listen_for_auth_callback, mark_mount_active,
+        mark_mount_failed, parse_auth_callback_target, resolve_installer_target_from_inputs,
+        resolve_juicefs_executable_from_inputs, restore_mounts, run_doctor_checks,
+        search_path_for_binary, stop_all_mounts, DesktopAuthCallbackPayload, DoctorCheckStatus,
+        JuicefsCommandSpec, MountLifecycleState, MountPlatform, MountRecord, MountSpec,
+        OpenCommandSpec,
     };
 
     #[test]
@@ -726,5 +727,32 @@ mod tests {
         assert!(response.contains("200 OK"));
         assert_eq!(payload.code.as_deref(), Some("auth_code"));
         assert_eq!(payload.state.as_deref(), Some("auth_state"));
+    }
+
+    #[test]
+    fn parses_minimal_brokered_desktop_auth_config() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("expected free port");
+        let port = listener.local_addr().expect("expected addr").port();
+        let thread = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("expected request");
+            let mut request = [0_u8; 2048];
+            let _ = stream.read(&mut request).expect("expected request bytes");
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"deployment_base_url\":\"http://127.0.0.1:3101\",\"api_base_url\":\"http://127.0.0.1:21000/api/v1\"}",
+                )
+                .expect("expected response write");
+        });
+
+        let config = fetch_desktop_auth_config_from_base_url(&format!("http://127.0.0.1:{port}"))
+            .expect("expected minimal brokered config");
+
+        assert_eq!(config.deployment_base_url, "http://127.0.0.1:3101");
+        assert_eq!(config.api_base_url.as_deref(), Some("http://127.0.0.1:21000/api/v1"));
+        assert_eq!(config.issuer, None);
+        assert_eq!(config.authorization_endpoint, None);
+        assert_eq!(config.token_endpoint, None);
+
+        thread.join().expect("expected server thread");
     }
 }
