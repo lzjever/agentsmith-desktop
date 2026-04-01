@@ -94,6 +94,12 @@ jobs:
       - name: Setup Rust toolchain
         run: rustup default stable
 
+      - name: Prepare Arch package build user
+        run: |
+          id -u builder >/dev/null 2>&1 || useradd -m builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          chown -R builder:builder /github/home
+
       - name: Run Arch packaging tests
         run: |
           npm ci
@@ -108,8 +114,7 @@ jobs:
 
       - name: Build Arch package
         run: |
-          npm run package:arch:metadata
-          npm run package:arch
+          su builder -c "cd \"$GITHUB_WORKSPACE\" && npm run package:arch:metadata && npm run package:arch"
 
       - name: Upload Arch package artifacts
         uses: actions/upload-artifact@v4
