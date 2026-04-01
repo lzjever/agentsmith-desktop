@@ -6,6 +6,7 @@ import {
   deactivateLibrary,
   markLibraryMounted,
   markLibraryMountFailed,
+  markLibraryUnmounted,
   restoreActiveLibraries,
   setLibraryAlias,
   signOutDesktop,
@@ -36,6 +37,13 @@ describe('desktop state', () => {
     const failed = markLibraryMountFailed(mounted, 'lib_1', 'spawn_failed');
     expect(failed.mount_states.lib_1?.state).toBe('failed');
     expect(failed.diagnostics.last_mount_error).toBe('spawn_failed');
+
+    const unmounted = markLibraryUnmounted(failed, 'lib_1');
+    expect(unmounted.mount_states.lib_1).toEqual({
+      state: 'idle',
+      mount_target: null,
+      last_error: null,
+    });
   });
 
   it('stores and removes aliases', () => {

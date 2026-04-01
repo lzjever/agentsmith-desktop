@@ -20,6 +20,7 @@ import { fetchDesktopLibraries } from './lib/libraries/api';
 import { displayLibraryName, sortLibrariesNewestFirst } from './lib/libraries/sort';
 import { fetchDesktopMountAccess } from './lib/mounts/api';
 import { buildDesktopMountTarget, detectDesktopPlatform } from './lib/mounts/paths';
+import { createDesktopMountService, type DesktopMountService } from './lib/mounts/service';
 import {
   DEFAULT_DESKTOP_STATE,
   activateLibrary,
@@ -28,16 +29,23 @@ import {
   deactivateLibrary,
   markLibraryMounted,
   markLibraryMountFailed,
+  markLibraryUnmounted,
   setLibraryAlias,
   signOutDesktop,
 } from './lib/state/desktop-state';
 import { mergeDesktopLibraries } from './lib/state/session';
 
-export function App() {
+export function App(props: {
+  mountService?: DesktopMountService;
+} = {}) {
   const [state, setState] = React.useState<DesktopState>(DEFAULT_DESKTOP_STATE);
   const [deploymentInput, setDeploymentInput] = React.useState('https://agentsmith.example.com');
   const [status, setStatus] = React.useState<string>('idle');
   const [error, setError] = React.useState<string | null>(null);
+  const mountService = React.useMemo(
+    () => props.mountService ?? createDesktopMountService({ platform: detectDesktopPlatform() }),
+    [props.mountService],
+  );
 
   React.useEffect(() => {
     const restored = loadDesktopSession(window.localStorage);
@@ -178,7 +186,12 @@ export function App() {
         access,
         library,
       });
-      setState((current) => markLibraryMounted(current, library.id, mountTarget));
+      const activation = await mountService.activate({
+        libraryId: library.id,
+        workspaceId: library.workspace_id,
+        access,
+      });
+      setState((current) => markLibraryMounted(current, library.id, activation.mountTarget || mountTarget));
     } catch (cause) {
       setState((current) => markLibraryMountFailed(
         current,
@@ -186,7 +199,49 @@ export function App() {
         cause instanceof Error ? cause.message : 'desktop_mount_failed',
       ));
     }
-  }, [state.auth_session, state.deployment_base_url]);
+  }, [mountService, state.auth_session, state.deployment_base_url]);
+
+  const handleDeactivateLibrary = React.useCallback(async (libraryId: string) => {
+    setState((current) => deactivateLibrary(current, libraryId));
+    try {
+      await mountService.deactivate(libraryId);
+      setState((current) => markLibraryUnmounted(current, libraryId));
+    } catch (cause) {
+      setState((current) => markLibraryMountFailed(
+        current,
+        libraryId,
+        cause instanceof Error ? cause.message : 'desktop_unmount_failed',
+      ));
+    }
+  }, [mountService]);
+
+  React.useEffect(() => {
+    if (!state.auth_session || state.libraries.length === 0 || state.active_library_ids.length === 0) {
+      return;
+    }
+    const restorableLibraries = state.libraries.filter((library) => {
+      if (!state.active_library_ids.includes(library.id)) return false;
+      const lifecycle = state.mount_states[library.id]?.state;
+      return lifecycle !== 'active' && lifecycle !== 'activating';
+    });
+    if (restorableLibraries.length === 0) {
+      return;
+    }
+    void Promise.all(restorableLibraries.map(async (library) => {
+      await handleActivateLibrary(library);
+    }));
+  }, [handleActivateLibrary, state.active_library_ids, state.auth_session, state.libraries, state.mount_states]);
+
+  React.useEffect(() => {
+    const handleBeforeUnload = () => {
+      void mountService.stopAll();
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      void mountService.stopAll();
+    };
+  }, [mountService]);
 
   return (
     <main className="app-shell">
@@ -253,10 +308,10 @@ export function App() {
                     type="button"
                     onClick={() => {
                       if (active) {
-                        setState((current) => deactivateLibrary(current, library.id));
-                        return;
+                        void handleDeactivateLibrary(library.id);
+                      } else {
+                        void handleActivateLibrary(library);
                       }
-                      void handleActivateLibrary(library);
                     }}
                     data-testid={`desktop__library-toggle--${library.id}`}
                   >

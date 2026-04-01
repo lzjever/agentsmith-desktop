@@ -95,6 +95,23 @@ export function markLibraryMounted(
   };
 }
 
+export function markLibraryUnmounted(
+  state: DesktopState,
+  libraryId: string,
+): DesktopState {
+  return {
+    ...state,
+    mount_states: {
+      ...state.mount_states,
+      [libraryId]: {
+        state: 'idle',
+        mount_target: null,
+        last_error: null,
+      },
+    },
+  };
+}
+
 export function markLibraryMountFailed(
   state: DesktopState,
   libraryId: string,
