@@ -7,7 +7,7 @@ import {
   fetchDesktopAuthConfig,
   startDesktopAuthorization,
 } from './lib/auth/desktop-auth';
-import { createBrowserAuthRuntime, createTauriAuthRuntime } from './lib/auth/tauri-backend';
+import { createBrowserAuthRuntime, createTauriAuthRuntime, fetchDesktopAuthConfigViaTauri } from './lib/auth/tauri-backend';
 import {
   clearDesktopSession,
   clearPkceContext,
@@ -240,7 +240,9 @@ export function App(props: {
       setStatus('connecting');
       setError(null);
       const normalizedBaseUrl = normalizeDeploymentBaseUrl(deploymentInput);
-      const authConfig = await fetchDesktopAuthConfig(normalizedBaseUrl);
+      const authConfig = isTauriRuntimeAvailable()
+        ? await fetchDesktopAuthConfigViaTauri(normalizedBaseUrl)
+        : await fetchDesktopAuthConfig(normalizedBaseUrl);
       setState((current) => connectDeployment(current, normalizedBaseUrl, authConfig));
       setStatus('connected');
     } catch (cause) {

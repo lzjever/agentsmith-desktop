@@ -2,7 +2,8 @@
 
 use agentsmith_desktop_core::{
     build_mount_command_with_executable, build_open_command_for_os, mark_mount_active, mark_mount_failed,
-    resolve_installer_target_from_inputs, resolve_juicefs_executable, DesktopAuthCallbackPayload,
+    resolve_installer_target_from_inputs, resolve_juicefs_executable, DesktopAuthCallbackPayload, DesktopAuthConfig,
+    fetch_desktop_auth_config_from_base_url,
     listen_for_auth_callback,
     run_doctor_checks as core_run_doctor_checks, DoctorCheck, MountLifecycleState, MountRecord,
     MountSpec,
@@ -208,6 +209,13 @@ async fn await_auth_callback(port: u16, path: String) -> Result<DesktopAuthCallb
 }
 
 #[tauri::command]
+fn fetch_desktop_auth_config(
+    #[allow(non_snake_case)] deploymentBaseUrl: String,
+) -> Result<DesktopAuthConfig, String> {
+    fetch_desktop_auth_config_from_base_url(&deploymentBaseUrl)
+}
+
+#[tauri::command]
 fn handoff_doctor_action(
     app: tauri::AppHandle,
     request: DoctorHandoffRequest,
@@ -243,6 +251,7 @@ fn main() {
             open_external_url,
             open_path,
             await_auth_callback,
+            fetch_desktop_auth_config,
             handoff_doctor_action
         ])
         .run(tauri::generate_context!())

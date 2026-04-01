@@ -1,10 +1,17 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { invoke } from '@tauri-apps/api/core';
 import { App } from '../App';
 import type { DesktopAuthRuntime } from '../lib/auth/runtime';
 import type { DesktopDoctorService } from '../lib/doctor/service';
 import type { DesktopMountService } from '../lib/mounts/service';
 import type { DesktopDoctorCheck } from '../types';
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn(),
+}));
+
+const invokeMock = vi.mocked(invoke);
 
 const API_BASE = 'https://agentsmith.example.com/api/v1';
 
@@ -13,6 +20,8 @@ describe('App', () => {
     window.localStorage.clear();
     window.sessionStorage.clear();
     vi.restoreAllMocks();
+    invokeMock.mockReset();
+    delete (window as typeof window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
   });
 
   function createDoctorService(checks: DesktopDoctorCheck[] = [{
@@ -55,6 +64,37 @@ describe('App', () => {
     });
     expect(screen.getByTestId('desktop__signed-in-user')).toHaveTextContent('Not signed in');
     expect(screen.getByTestId('desktop__sign-in')).toBeInTheDocument();
+  });
+
+  it('loads desktop auth config through the tauri backend when running in tauri', async () => {
+    const user = userEvent.setup();
+    (window as typeof window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+    invokeMock.mockResolvedValueOnce({
+      deployment_base_url: 'http://localhost:3101',
+      api_base_url: 'http://localhost:21000/api/v1',
+      issuer: 'http://localhost:18080/realms/mbos',
+      authorization_endpoint: 'http://localhost:18080/realms/mbos/protocol/openid-connect/auth',
+      token_endpoint: 'http://localhost:18080/realms/mbos/protocol/openid-connect/token',
+      client_id: 'agentsmith',
+      scopes: ['openid', 'profile', 'email'],
+      response_type: 'code',
+      pkce_method: 'S256',
+      suggested_callback_origin: 'http://127.0.0.1',
+      suggested_callback_path: '/desktop/auth/callback',
+    });
+
+    render(<App doctorService={createDoctorService()} />);
+    const input = screen.getByLabelText('Deployment URL');
+    await user.clear(input);
+    await user.type(input, 'http://localhost:3101');
+    await user.click(screen.getByTestId('desktop__connect-submit'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('desktop__deployment-url')).toHaveTextContent('http://localhost:3101');
+    });
+    expect(invokeMock).toHaveBeenCalledWith('fetch_desktop_auth_config', {
+      deploymentBaseUrl: 'http://localhost:3101',
+    });
   });
 
   it('completes sign-in through the interactive auth runtime and loads libraries', async () => {

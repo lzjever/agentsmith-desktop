@@ -87,6 +87,21 @@ pub struct DesktopAuthCallbackPayload {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DesktopAuthConfig {
+    pub deployment_base_url: String,
+    pub api_base_url: Option<String>,
+    pub issuer: String,
+    pub authorization_endpoint: String,
+    pub token_endpoint: String,
+    pub client_id: String,
+    pub scopes: Vec<String>,
+    pub response_type: String,
+    pub pkce_method: String,
+    pub suggested_callback_origin: String,
+    pub suggested_callback_path: String,
+}
+
 pub fn resolve_installer_target_from_inputs(
     installer_key: &str,
     resource_dir: Option<&Path>,
@@ -281,6 +296,21 @@ pub fn listen_for_auth_callback(
     let payload = parse_auth_callback_target(request_target, expected_path)?;
     write_auth_callback_response(&mut stream)?;
     Ok(payload)
+}
+
+pub fn fetch_desktop_auth_config_from_base_url(
+    deployment_base_url: &str,
+) -> Result<DesktopAuthConfig, String> {
+    let normalized = deployment_base_url.trim_end_matches('/');
+    let url = format!("{normalized}/api/public/desktop/auth");
+    let response = reqwest::blocking::get(&url)
+        .map_err(|error| format!("desktop_auth_config_fetch_failed:{error}"))?;
+    if !response.status().is_success() {
+        return Err(format!("desktop_auth_config_failed_{}", response.status().as_u16()));
+    }
+    response
+        .json::<DesktopAuthConfig>()
+        .map_err(|error| format!("desktop_auth_config_parse_failed:{error}"))
 }
 
 pub fn mark_mount_active(record: &MountRecord, mount_target: String) -> MountRecord {

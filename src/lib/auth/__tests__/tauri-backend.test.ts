@@ -1,4 +1,4 @@
-import { createBrowserAuthRuntime, createTauriAuthRuntime } from '../tauri-backend';
+import { createBrowserAuthRuntime, createTauriAuthRuntime, fetchDesktopAuthConfigViaTauri } from '../tauri-backend';
 
 describe('createTauriAuthRuntime', () => {
   it('starts the callback listener and opens the browser', async () => {
@@ -43,5 +43,32 @@ describe('createBrowserAuthRuntime', () => {
 
     expect(locationAssign).toHaveBeenCalledWith('https://agentsmith.example.com/auth');
     expect(callback).toBeNull();
+  });
+});
+
+describe('fetchDesktopAuthConfigViaTauri', () => {
+  it('loads desktop auth config through the tauri invoke bridge', async () => {
+    const invokeImpl = vi.fn().mockResolvedValue({
+      deployment_base_url: 'http://localhost:3101',
+      api_base_url: 'http://localhost:21000/api/v1',
+      issuer: 'http://localhost:18080/realms/mbos',
+      authorization_endpoint: 'http://localhost:18080/realms/mbos/protocol/openid-connect/auth',
+      token_endpoint: 'http://localhost:18080/realms/mbos/protocol/openid-connect/token',
+      client_id: 'agentsmith',
+      scopes: ['openid', 'profile', 'email'],
+      response_type: 'code',
+      pkce_method: 'S256',
+      suggested_callback_origin: 'http://127.0.0.1',
+      suggested_callback_path: '/desktop/auth/callback',
+    });
+
+    await expect(fetchDesktopAuthConfigViaTauri('http://localhost:3101', invokeImpl)).resolves.toMatchObject({
+      deployment_base_url: 'http://localhost:3101',
+      api_base_url: 'http://localhost:21000/api/v1',
+    });
+
+    expect(invokeImpl).toHaveBeenCalledWith('fetch_desktop_auth_config', {
+      deploymentBaseUrl: 'http://localhost:3101',
+    });
   });
 });
