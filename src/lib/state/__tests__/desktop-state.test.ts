@@ -1,9 +1,12 @@
 import {
   DEFAULT_DESKTOP_STATE,
   activateLibrary,
+  completeDesktopSignIn,
+  connectDeployment,
   deactivateLibrary,
   restoreActiveLibraries,
   setLibraryAlias,
+  signOutDesktop,
 } from '../desktop-state';
 
 describe('desktop state', () => {
@@ -21,5 +24,63 @@ describe('desktop state', () => {
     const aliased = setLibraryAlias(DEFAULT_DESKTOP_STATE, 'lib_1', 'Work Files');
     expect(aliased.library_aliases.lib_1).toBe('Work Files');
     expect(setLibraryAlias(aliased, 'lib_1', '   ').library_aliases.lib_1).toBeUndefined();
+  });
+
+  it('connects a deployment and completes sign-in', () => {
+    const connected = connectDeployment(DEFAULT_DESKTOP_STATE, 'https://agentsmith.example.com', {
+      deployment_base_url: 'https://agentsmith.example.com',
+      issuer: 'https://agentsmith.example.com/realms/mbos',
+      authorization_endpoint: 'https://agentsmith.example.com/auth',
+      token_endpoint: 'https://agentsmith.example.com/token',
+      client_id: 'agentsmith-desktop',
+      scopes: ['openid', 'profile', 'email'],
+      response_type: 'code',
+      pkce_method: 'S256',
+      suggested_callback_origin: 'http://127.0.0.1',
+      suggested_callback_path: '/desktop/auth/callback',
+    });
+    const signedIn = completeDesktopSignIn(connected, {
+      access_token: 'token',
+      refresh_token: 'refresh',
+      expires_at: 123,
+    }, {
+      id: 'user_1',
+      email: 'user@example.com',
+      name: 'User Example',
+    });
+    expect(signedIn.signed_in_user?.email).toBe('user@example.com');
+    expect(signedIn.auth_session?.access_token).toBe('token');
+  });
+
+  it('signs out while keeping the connected deployment', () => {
+    const signedOut = signOutDesktop({
+      ...DEFAULT_DESKTOP_STATE,
+      deployment_base_url: 'https://agentsmith.example.com',
+      auth_config: {
+        deployment_base_url: 'https://agentsmith.example.com',
+        issuer: 'https://agentsmith.example.com/realms/mbos',
+        authorization_endpoint: 'https://agentsmith.example.com/auth',
+        token_endpoint: 'https://agentsmith.example.com/token',
+        client_id: 'agentsmith-desktop',
+        scopes: ['openid', 'profile', 'email'],
+        response_type: 'code',
+        pkce_method: 'S256',
+        suggested_callback_origin: 'http://127.0.0.1',
+        suggested_callback_path: '/desktop/auth/callback',
+      },
+      auth_session: {
+        access_token: 'token',
+        refresh_token: 'refresh',
+        expires_at: 123,
+      },
+      signed_in_user: {
+        id: 'user_1',
+        email: 'user@example.com',
+        name: 'User Example',
+      },
+    });
+    expect(signedOut.signed_in_user).toBeNull();
+    expect(signedOut.auth_session).toBeNull();
+    expect(signedOut.deployment_base_url).toBe('https://agentsmith.example.com');
   });
 });
