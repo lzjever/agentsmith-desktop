@@ -55,6 +55,27 @@ For each pilot machine:
 8. Restart the app and confirm the active mount is restored.
 9. Fully exit the app and confirm the mount becomes unavailable.
 
+## Local Development Smoke
+
+For local engineering validation against `local-manual`, use:
+
+```bash
+npm run smoke:local-manual-mount
+```
+
+This smoke uses the Desktop-facing routes to:
+
+- fetch Desktop auth bootstrap
+- list desktop libraries
+- request `desktop_mount_access` for `Desktop Integration Library`
+- run repeated mount/unmount cycles against the current local deployment
+
+Useful overrides:
+
+```bash
+LIBRARY_NAME="Desktop Integration Library" CYCLES=5 npm run smoke:local-manual-mount
+```
+
 ## Failure Collection
 
 When the pilot hits a failure, capture:
