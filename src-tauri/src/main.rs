@@ -1,8 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use agentsmith_desktop_core::{
-    build_mount_command_with_executable, build_open_command_for_os, expand_mount_target_for_os,
-    mark_mount_active, mark_mount_failed, resolve_installer_target_from_inputs,
+    build_mount_command_with_executable, build_open_command_for_os, build_unmount_commands_for_os,
+    expand_mount_target_for_os, mark_mount_active, mark_mount_failed, resolve_installer_target_from_inputs,
     resolve_juicefs_executable, DesktopAuthCallbackPayload, DesktopAuthConfig,
     fetch_desktop_auth_config_from_base_url, listen_for_auth_callback,
     run_doctor_checks as core_run_doctor_checks, DoctorCheck, MountLifecycleState, MountRecord,
@@ -51,8 +51,16 @@ fn prepare_mount_target(spec: &MountSpec) -> Result<(), String> {
         return Ok(());
     }
 
-    std::fs::create_dir_all(&spec.mount_target)
-        .map_err(|error| format!("desktop_mount_target_prepare_failed:{error}"))
+    match std::fs::create_dir_all(&spec.mount_target) {
+        Ok(()) => Ok(()),
+        Err(error) if error.to_string().contains("Transport endpoint is not connected") => {
+            let _ = force_unmount_target(&spec.mount_target);
+            let _ = std::fs::remove_dir(&spec.mount_target);
+            std::fs::create_dir_all(&spec.mount_target)
+                .map_err(|retry_error| format!("desktop_mount_target_prepare_failed:{retry_error}"))
+        }
+        Err(error) => Err(format!("desktop_mount_target_prepare_failed:{error}")),
+    }
 }
 
 fn resolve_mount_target(spec: &MountSpec) -> String {
@@ -147,6 +155,45 @@ fn stop_child_process(child: &mut Child) -> Result<(), String> {
         }
         Err(error) => Err(format!("desktop_mount_probe_failed:{error}")),
     }
+}
+
+fn force_unmount_target(mount_target: &str) -> Result<(), String> {
+    let mut last_error: Option<String> = None;
+    for command_spec in build_unmount_commands_for_os(std::env::consts::OS, mount_target) {
+        let status = Command::new(&command_spec.executable)
+            .args(&command_spec.args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        match status {
+            Ok(status) if status.success() => return Ok(()),
+            Ok(status) => {
+                last_error = Some(format!(
+                    "desktop_unmount_command_failed:{}:{}",
+                    command_spec.executable, status
+                ));
+            }
+            Err(error) => {
+                last_error = Some(format!(
+                    "desktop_unmount_command_failed:{}:{}",
+                    command_spec.executable, error
+                ));
+            }
+        }
+    }
+
+    if Path::new(mount_target).exists() {
+        match Command::new("mountpoint")
+            .args(["-q", mount_target])
+            .status()
+        {
+            Ok(status) if !status.success() => return Ok(()),
+            Ok(_) | Err(_) => {}
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| "desktop_unmount_failed".into()))
 }
 
 fn open_with_system(target: &str) -> Result<(), String> {
@@ -271,6 +318,7 @@ fn unmount_library(
         .remove(&libraryId)
         .ok_or_else(|| "desktop_mount_not_found".to_string())?;
     stop_child_process(&mut running.child)?;
+    force_unmount_target(&running.mount_target)?;
     Ok(MountRecord {
         library_id: libraryId,
         state: MountLifecycleState::Idle,
@@ -286,7 +334,9 @@ fn stop_all_mounts(state: tauri::State<'_, MountRegistry>) -> Result<Vec<MountRe
     let mut stopped = Vec::new();
     for library_id in library_ids {
         if let Some(mut running) = entries.remove(&library_id) {
-            let result = match stop_child_process(&mut running.child) {
+            let result = match stop_child_process(&mut running.child)
+                .and_then(|_| force_unmount_target(&running.mount_target))
+            {
                 Ok(_) => {
                     MountRecord {
                         library_id,

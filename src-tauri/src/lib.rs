@@ -81,6 +81,12 @@ pub struct OpenCommandSpec {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnmountCommandSpec {
+    pub executable: String,
+    pub args: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DesktopAuthCallbackPayload {
     pub code: Option<String>,
     pub state: Option<String>,
@@ -230,6 +236,43 @@ pub fn build_open_command_for_os(target_os: &str, target: &str) -> OpenCommandSp
             executable: "xdg-open".into(),
             args: vec![target.into()],
         },
+    }
+}
+
+pub fn build_unmount_commands_for_os(target_os: &str, target: &str) -> Vec<UnmountCommandSpec> {
+    match target_os {
+        "linux" => vec![
+            UnmountCommandSpec {
+                executable: "fusermount3".into(),
+                args: vec!["-uz".into(), target.into()],
+            },
+            UnmountCommandSpec {
+                executable: "fusermount".into(),
+                args: vec!["-uz".into(), target.into()],
+            },
+            UnmountCommandSpec {
+                executable: "umount".into(),
+                args: vec!["-l".into(), target.into()],
+            },
+        ],
+        "macos" => vec![
+            UnmountCommandSpec {
+                executable: "diskutil".into(),
+                args: vec!["unmount".into(), "force".into(), target.into()],
+            },
+            UnmountCommandSpec {
+                executable: "umount".into(),
+                args: vec![target.into()],
+            },
+        ],
+        "windows" => vec![UnmountCommandSpec {
+            executable: "cmd".into(),
+            args: vec!["/C".into(), "mountvol".into(), target.into(), "/D".into()],
+        }],
+        _ => vec![UnmountCommandSpec {
+            executable: "umount".into(),
+            args: vec![target.into()],
+        }],
     }
 }
 
@@ -465,12 +508,13 @@ mod tests {
 
     use super::{
         build_mount_command, build_mount_command_with_executable, build_open_command_for_os,
+        build_unmount_commands_for_os,
         expand_mount_target_for_os, fetch_desktop_auth_config_from_base_url, listen_for_auth_callback,
         mark_mount_active, mark_mount_failed, parse_auth_callback_target,
         resolve_installer_target_from_inputs, resolve_juicefs_executable_from_inputs,
         restore_mounts, run_doctor_checks, search_path_for_binary, stop_all_mounts,
         DesktopAuthCallbackPayload, DoctorCheckStatus, JuicefsCommandSpec, MountLifecycleState,
-        MountPlatform, MountRecord, MountSpec, OpenCommandSpec,
+        MountPlatform, MountRecord, MountSpec, OpenCommandSpec, UnmountCommandSpec,
     };
 
     #[test]
@@ -686,6 +730,27 @@ mod tests {
                 executable: "xdg-open".into(),
                 args: vec!["/tmp/agentsmith-mount".into()],
             }
+        );
+    }
+
+    #[test]
+    fn builds_linux_unmount_commands() {
+        assert_eq!(
+            build_unmount_commands_for_os("linux", "/tmp/agentsmith-mount"),
+            vec![
+                UnmountCommandSpec {
+                    executable: "fusermount3".into(),
+                    args: vec!["-uz".into(), "/tmp/agentsmith-mount".into()],
+                },
+                UnmountCommandSpec {
+                    executable: "fusermount".into(),
+                    args: vec!["-uz".into(), "/tmp/agentsmith-mount".into()],
+                },
+                UnmountCommandSpec {
+                    executable: "umount".into(),
+                    args: vec!["-l".into(), "/tmp/agentsmith-mount".into()],
+                },
+            ]
         );
     }
 
