@@ -6,10 +6,12 @@
 - `npm run typecheck`
 - `npm run build`
 - `cargo test`
+- `npm run smoke:local-manual-mount`
 - confirm release workflows are green on the latest `main`
 - do not build AppImage locally; AppImage, `.deb`, `.rpm`, and desktop installers are produced only by GitHub Actions after tagging
 - review `docs/known-limitations.md`
 - review `docs/internal-pilot-runbook.md`
+- review `docs/internal-pilot-release-evidence.md`
 - confirm `README.md` and `docs/README.md` still describe Desktop-first behavior
 - confirm bundled prerequisite installers are present when required for the pilot:
   - `src-tauri/resources/installers/windows/WinFsp.msi` or `WinFsp.exe`
@@ -28,7 +30,9 @@
   - AppImage
   - `.deb`
   - `.rpm`
-  - Arch package metadata, plus an Arch package artifact when built on an Arch-based host
+  - Arch package
+  - `PKGBUILD`
+  - `.SRCINFO`
 - checksums generated
 
 ## AgentSmith Web Coordination
