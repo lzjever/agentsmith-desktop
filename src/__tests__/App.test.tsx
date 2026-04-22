@@ -168,6 +168,75 @@ describe('App', () => {
     expect(authRuntime.startInteractiveSignIn).toHaveBeenCalled();
   });
 
+  it('uses the connected deployment url when desktop auth bootstrap reports a bind address', async () => {
+    const user = userEvent.setup();
+    const authRuntime: DesktopAuthRuntime = {
+      startInteractiveSignIn: vi.fn().mockResolvedValue(undefined),
+    };
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === 'http://10.7.0.23:3001/api/public/desktop/auth') {
+        return new Response(JSON.stringify({
+          deployment_base_url: 'http://0.0.0.0:3001',
+          api_base_url: 'http://10.7.0.23:20000/api/v1',
+        }), { status: 200 });
+      }
+      if (url === 'http://10.7.0.23:20000/api/v1/desktop/auth/start' && init?.method === 'POST') {
+        expect(JSON.parse(String(init.body))).toEqual({
+          deployment_base_url: 'http://10.7.0.23:3001',
+        });
+        return new Response(JSON.stringify({
+          request_id: 'dreq_bind_address',
+          browser_start_url: 'http://10.7.0.23:3001/en-US/desktop/auth/request?desktop_auth_request_id=dreq_bind_address',
+          poll_url: '/api/v1/desktop/auth/requests/dreq_bind_address',
+          poll_interval_ms: 0,
+        }), { status: 201 });
+      }
+      if (url === 'http://10.7.0.23:20000/api/v1/desktop/auth/requests/dreq_bind_address') {
+        return new Response(JSON.stringify({
+          request_id: 'dreq_bind_address',
+          status: 'authenticated',
+          exchange_ticket: 'dext_bind_address',
+          authenticated_user: {
+            id: 'user_1',
+            email: 'user@example.com',
+            name: 'User Example',
+          },
+        }), { status: 200 });
+      }
+      if (url === 'http://10.7.0.23:20000/api/v1/desktop/auth/exchange' && init?.method === 'POST') {
+        return new Response(JSON.stringify({
+          access_token: 'dsk_bind_address',
+          signed_in_user: {
+            id: 'user_1',
+            email: 'user@example.com',
+            name: 'User Example',
+          },
+        }), { status: 200 });
+      }
+      if (url === 'http://10.7.0.23:20000/api/v1/me/desktop/file-libraries') {
+        return new Response(JSON.stringify({
+          items: [],
+        }), { status: 200 });
+      }
+      throw new Error(`unexpected_fetch_${url}`);
+    });
+
+    render(<App authRuntime={authRuntime} doctorService={createDoctorService()} />);
+    const input = screen.getByLabelText('Deployment URL');
+    await user.clear(input);
+    await user.type(input, 'http://10.7.0.23:3001');
+    await user.click(screen.getByTestId('desktop__connect-submit'));
+    await user.click(await screen.findByTestId('desktop__sign-in'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('desktop__signed-in-user')).toHaveTextContent('user@example.com');
+    });
+    expect(authRuntime.startInteractiveSignIn).toHaveBeenCalledWith({
+      authorizationUrl: 'http://10.7.0.23:3001/en-US/desktop/auth/request?desktop_auth_request_id=dreq_bind_address',
+    });
+  });
+
   it('restores a signed-in session from local storage and toggles activation', async () => {
     const mountService: DesktopMountService = {
       activate: vi.fn().mockResolvedValue({

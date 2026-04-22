@@ -208,8 +208,12 @@ export function App(props: {
     try {
       setStatus('starting_browser_sign_in');
       setError(null);
+      const authConfig = {
+        ...state.auth_config,
+        deployment_base_url: state.deployment_base_url,
+      };
       const started = await startDesktopAuthorization({
-        authConfig: state.auth_config,
+        authConfig,
       });
       await authRuntime.startInteractiveSignIn({
         authorizationUrl: started.browser_start_url,
@@ -219,7 +223,7 @@ export function App(props: {
       while (Date.now() - startedAt < 5 * 60 * 1000) {
         await new Promise((resolve) => window.setTimeout(resolve, started.poll_interval_ms));
         const polled = await pollDesktopAuthorization({
-          authConfig: state.auth_config,
+          authConfig,
           pollUrl: started.poll_url,
         });
         if (polled.status === 'pending') {
@@ -228,7 +232,7 @@ export function App(props: {
         if (polled.status === 'authenticated' && polled.exchange_ticket) {
           setStatus('completing_sign_in');
           const exchanged = await exchangeDesktopAuthorizationCode({
-            authConfig: state.auth_config,
+            authConfig,
             requestId: started.request_id,
             exchangeTicket: polled.exchange_ticket,
           });
