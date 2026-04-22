@@ -1,6 +1,6 @@
 {
   "productName": "AgentSmith Desktop",
-  "version": "0.1.1",
+  "version": "0.1.5",
   "identifier": "ai.imotion.agentsmith.desktop",
   "build": {
     "beforeDevCommand": "npm run dev -- --host 127.0.0.1 --port 1420",
