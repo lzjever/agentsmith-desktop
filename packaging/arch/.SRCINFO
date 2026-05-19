@@ -1,6 +1,6 @@
 pkgbase = agentsmith-desktop-bin
 	pkgdesc = AgentSmith Desktop internal pilot binary package
-	pkgver = 0.1.0
+	pkgver = 0.1.5
 	pkgrel = 1
 	url = https://github.com/lzjever/agentsmith-desktop
 	arch = x86_64
