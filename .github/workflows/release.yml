@@ -128,6 +128,7 @@ jobs:
           id -u builder >/dev/null 2>&1 || useradd -m builder
           chown -R builder:builder "$GITHUB_WORKSPACE"
           chown -R builder:builder /github/home
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Install frontend dependencies
         run: npm ci
@@ -159,4 +160,5 @@ jobs:
             packaging/arch/out/dist/* \
             packaging/arch/PKGBUILD \
             packaging/arch/.SRCINFO \
+            --repo "${{ github.repository }}" \
             --clobber
